@@ -4,6 +4,10 @@ A cheeky adults-only life-management game for desktop. Pick your character (a pe
 
 ## Run
 
+**Mac, easiest:** double-click `Play Brady.command`. The first time, macOS may block it: right-click it, choose **Open**, then **Open** again.
+
+**Any computer, from a terminal:**
+
 ```bash
 pip install -r requirements.txt
 python main.py

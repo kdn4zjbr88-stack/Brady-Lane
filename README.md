@@ -47,3 +47,13 @@ Each encounter is a choice: condom, or no condom and then pull out or finish ins
 ```bash
 python -m pytest
 ```
+
+## Play in a browser
+
+```bash
+pip install pygbag
+python -m pygbag --build .
+python tools/serve_web.py 8000
+```
+
+Then open http://localhost:8000 and click once to start. The page downloads its Python runtime from pygame-web.github.io, so the first load takes a few seconds.

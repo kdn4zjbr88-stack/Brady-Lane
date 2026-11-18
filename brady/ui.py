@@ -1,6 +1,7 @@
 """Pygame front end for Brady: character setup, a walkable town, interiors and a phone."""
 from __future__ import annotations
 
+import asyncio
 import math
 import random
 from dataclasses import dataclass
@@ -768,12 +769,13 @@ class App:
         self.draw_toast()
         pygame.display.flip()
 
-    def run(self):
+    async def run(self):
         while self.running:
             dt = self.clock.tick(60) / 1000
             self.frame(pygame.event.get(), min(dt, 0.05))
+            await asyncio.sleep(0)  # lets the browser build breathe each frame
         pygame.quit()
 
 
 def main():
-    App().run()
+    asyncio.run(App().run())

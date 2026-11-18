@@ -62,8 +62,27 @@ def _status_fx(surf, cx, top, s, hygiene, infected, ticks):
             pygame.draw.circle(surf, (210, 40, 40), (int(x), int(y)), int(5 * s))
 
 
+SILVER = (215, 220, 230)
+
+
+def _ring(surf, pos, s):
+    pygame.draw.circle(surf, SILVER, (int(pos[0]), int(pos[1])), max(3, int(7 * s)), max(2, int(3 * s)))
+
+
+def _stud(surf, pos, s):
+    pygame.draw.circle(surf, SILVER, (int(pos[0]), int(pos[1])), max(2, int(4 * s)))
+
+
+def _piercings(surf, piercings, spots, s):
+    for name in piercings:
+        pos = spots.get(name)
+        if pos is None:
+            continue
+        (_stud if name in ("Ear", "Tongue") else _ring)(surf, pos, s)
+
+
 def draw_character(surf, char: Character, center, scale=1.0, mood=70, energy=80,
-                   hygiene=80, infected=False, ticks=0):
+                   hygiene=80, infected=False, ticks=0, piercings=()):
     cx, cy = center
     s = scale
     body = BODY_COLORS[char.body_color]
@@ -86,7 +105,11 @@ def draw_character(surf, char: Character, center, scale=1.0, mood=70, energy=80,
         head.center = (cx, shaft.top + 30 * s)
         pygame.draw.ellipse(surf, _shade(body, 1.12), head)
         pygame.draw.ellipse(surf, outline, head, max(2, int(3 * s)))
-        _face(surf, cx, shaft.top + 95 * s, s, mood, energy, outline)
+        fy = shaft.top + 95 * s
+        _face(surf, cx, fy, s, mood, energy, outline)
+        spots = {"Ear": (cx - 36 * s, fy - 10 * s), "Eyebrow": (cx + 28 * s, fy - 14 * s),
+                 "Lip": (cx + 20 * s, fy + 24 * s), "Tongue": (cx, fy + 22 * s),
+                 "Intimate": (cx, head.top + 4 * s)}
         top = head.top
     else:
         outer = pygame.Rect(0, 0, 170 * s, 220 * s)
@@ -98,7 +121,27 @@ def draw_character(surf, char: Character, center, scale=1.0, mood=70, energy=80,
         inner.center = (cx, cy + 40 * s)
         pygame.draw.ellipse(surf, (200, 90, 120), inner)
         pygame.draw.ellipse(surf, outline, inner, max(2, int(3 * s)))
-        _face(surf, cx, cy - 50 * s, s, mood, energy, outline)
+        fy = cy - 50 * s
+        _face(surf, cx, fy, s, mood, energy, outline)
+        spots = {"Ear": (cx - 70 * s, fy), "Eyebrow": (cx + 28 * s, fy - 14 * s),
+                 "Lip": (cx + 20 * s, fy + 24 * s), "Tongue": (cx, fy + 22 * s),
+                 "Intimate": (cx, inner.top)}
         top = outer.top
 
+    _piercings(surf, piercings, spots, s)
     _status_fx(surf, cx, top, s, hygiene, infected, ticks)
+
+
+def draw_person(surf, pos, skin, hair, scale=1.0, ticks=0, phase=0.0, outfit=(200, 60, 90)):
+    """A simple cartoon person (partners and club-goers)."""
+    s = scale
+    x, y = pos
+    y += math.sin(ticks / 180 + phase) * 3 * s
+    skin_c, hair_c = BODY_COLORS[skin], HAIR_COLORS[hair]
+    body = pygame.Rect(0, 0, 44 * s, 56 * s)
+    body.midtop = (x, y - 8 * s)
+    pygame.draw.ellipse(surf, outfit, body)
+    pygame.draw.circle(surf, skin_c, (int(x), int(y - 20 * s)), int(18 * s))
+    pygame.draw.arc(surf, hair_c, pygame.Rect(x - 19 * s, y - 40 * s, 38 * s, 30 * s), 0, math.pi, int(9 * s))
+    for side in (-1, 1):
+        pygame.draw.circle(surf, (20, 20, 20), (int(x + side * 6 * s), int(y - 21 * s)), max(1, int(2.5 * s)))

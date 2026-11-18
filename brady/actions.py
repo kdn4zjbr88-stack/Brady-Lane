@@ -1,26 +1,54 @@
 """Player actions. Each returns None on success or a string explaining why it can't be done."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
-
-from .model import GameState, Partner
+from .model import PIERCINGS, SWIPES_PER_DAY, Conception, GameState, Partner, piercing_label
 
 CONDOM_PACK_PRICE = 15
 CONDOM_PACK_SIZE = 3
 MEAL_PRICE = 12
-PARTY_PRICE = 30
+SNACK_PRICE = 5
+DRINK_PRICE = 15
 CLINIC_PRICE = 50
+TEST_PRICE = 20
+PILL_PRICE = 45
 WORK_PAY = 60
 
+# Hidden per-encounter pregnancy odds (exaggerated a bit so choices matter in a 30-day game)
+PREGNANCY_RISK = {"condom": 0.02, "pull_out": 0.06, "inside": 0.25}
+STI_FACTOR = {"condom": 0.05, "pull_out": 1.0, "inside": 1.0}
 
+STEAMY = [
+    "{n} pulls you in by the collar. Clothes hit the floor. The neighbours definitely heard.",
+    "One kiss turns into ten. The bed creaks. Neither of you cares.",
+    "{n} whispers something filthy in your ear and the lights go out. Wow.",
+    "Things get very steamy, very fast. {n} is grinning the whole time.",
+    "You and {n} don't make it to the bed on the first try.",
+]
+FLIRTS = [
+    "\"Are you always this cute or is it the lighting?\"",
+    "\"I was hoping you'd come talk to me.\"",
+    "\"Buy me a drink and I'll tell you a secret.\"",
+    "\"You dance like you know what you're doing...\"",
+]
+
+
+# ---- basics ---------------------------------------------------------------
 def eat(gs: GameState) -> str | None:
     if gs.money < MEAL_PRICE:
         return f"You need ${MEAL_PRICE} to eat."
     gs.money -= MEAL_PRICE
-    gs.adjust(fullness=40, mood=5, health=2)
-    gs.say("You grabbed a solid meal. Nom.")
+    gs.adjust(fullness=45, mood=6, health=2)
+    gs.say("Burger, fries, shake. Absolutely worth it.")
     gs.advance()
+    return None
+
+
+def snack(gs: GameState) -> str | None:
+    if gs.money < SNACK_PRICE:
+        return f"Groceries cost ${SNACK_PRICE}."
+    gs.money -= SNACK_PRICE
+    gs.adjust(fullness=20, mood=2)
+    gs.say("You raided the fridge.")
     return None
 
 
@@ -32,20 +60,35 @@ def shower(gs: GameState) -> str | None:
     return None
 
 
+def pee(gs: GameState) -> str | None:
+    gs.adjust(mood=3)
+    gs.say("Ahhh. Relief.")
+    return None
+
+
+def mirror(gs: GameState) -> str | None:
+    if gs.charm >= 60:
+        gs.say(f"Looking irresistible today. (Charm {gs.charm})")
+    elif gs.charm >= 35:
+        gs.say(f"Not bad at all. (Charm {gs.charm})")
+    else:
+        gs.say(f"Yikes. Maybe shower first? (Charm {gs.charm})")
+    return None
+
+
 def sleep(gs: GameState) -> str | None:
-    remaining = 4 - gs.slot
-    gs.advance(remaining)  # sleep through to next morning
+    gs.advance(4 - gs.slot)  # sleep through to next morning
     if gs.game_over:
         return None
     gs.energy = 100
-    gs.adjust(health=8, mood=5, fullness=10)  # partially offsets decay while asleep
-    gs.say(f"You slept well. Good morning, day {gs.day}!")
+    gs.adjust(health=8, mood=5, fullness=10)
+    gs.say(f"You slept like a baby. Good morning, day {gs.day}!")
     return None
 
 
 def work(gs: GameState) -> str | None:
     if gs.time_name == "Night":
-        return "Nobody's hiring at night. Try sleeping or partying."
+        return "The office is closed at night."
     if gs.energy < 20:
         return "Too tired to work."
     gs.money += WORK_PAY
@@ -55,31 +98,150 @@ def work(gs: GameState) -> str | None:
     return None
 
 
-def party(gs: GameState) -> str | None:
-    if gs.time_name not in ("Evening", "Night"):
-        return "Parties start in the evening."
-    if gs.money < PARTY_PRICE:
-        return f"You need ${PARTY_PRICE} to go out."
-    if gs.energy < 20:
-        return "Too tired to party."
-    gs.money -= PARTY_PRICE
-    gs.adjust(mood=22, energy=-22, hygiene=-12, fullness=-5)
-    met = [Partner.random(gs.rng) for _ in range(gs.rng.randint(1, 2))]
-    gs.partners.extend(met)
-    del gs.partners[:-6]  # only remember recent contacts
-    names = ", ".join(f"{p.name} ({p.age}, {p.vibe})" for p in met)
-    gs.say(f"Great night out! You swapped numbers with {names}.")
+# ---- club -----------------------------------------------------------------
+def drink(gs: GameState) -> str | None:
+    if gs.money < DRINK_PRICE:
+        return f"Drinks are ${DRINK_PRICE}."
+    gs.money -= DRINK_PRICE
+    gs.adjust(mood=12, health=-2, fullness=3)
+    gs.say("A strong drink. Your confidence goes up a notch.")
+    return None
+
+
+def dance(gs: GameState) -> str | None:
+    if gs.energy < 15:
+        return "Your legs say no."
+    gs.adjust(mood=18, energy=-15, hygiene=-12)
+    gs.say("You owned the dance floor. People are looking.")
     gs.advance()
     return None
 
 
+def chat_up(gs: GameState, p: Partner) -> str | None:
+    if p in gs.matches:
+        return f"You already have {p.name}'s number."
+    chance = 0.25 + gs.charm / 120 + p.chemistry * 0.2
+    if gs.rng.random() < chance:
+        gs.add_match(p)
+        gs.adjust(mood=10)
+        gs.say(f"{p.name}: {gs.rng.choice(FLIRTS)} You swapped numbers.")
+    else:
+        gs.adjust(mood=-8)
+        gs.say(f"{p.name} smiled politely and turned back to their friends. Ouch.")
+    return None
+
+
+def go_home_with(gs: GameState, p: Partner) -> str | None:
+    if p not in gs.matches:
+        return "Get to know them first."
+    gs.date = p
+    gs.say(f"{p.name} grabs your hand: \"My place is right around the corner.\"")
+    return None
+
+
+# ---- dating app -----------------------------------------------------------
+def new_profile(gs: GameState) -> Partner:
+    anatomy = None if gs.show_me == "everyone" else gs.show_me
+    return Partner.random(gs.rng, anatomy)
+
+
+def swipe(gs: GameState, p: Partner, right: bool) -> bool | str:
+    """Returns True on a match, False otherwise, or an error string."""
+    if gs.swipes_today >= SWIPES_PER_DAY:
+        return "Out of swipes today. Touch grass."
+    gs.swipes_today += 1
+    if not right:
+        return False
+    if gs.rng.random() < 0.2 + gs.charm / 150:
+        gs.add_match(p)
+        gs.say(f"It's a match with {p.name}! \"{p.bio}\"")
+        return True
+    return False
+
+
+def text_match(gs: GameState, p: Partner) -> str | None:
+    if not gs.is_night_time:
+        gs.say(f"{p.name}: \"busy rn, text me tonight ;)\"")
+        return None
+    gs.date = p
+    gs.say(f"{p.name}: \"come over. Apartments, unit 4. door's open.\"")
+    return None
+
+
+# ---- the bedroom ----------------------------------------------------------
+def can_conceive(gs: GameState, p: Partner) -> bool:
+    return gs.character.kind != p.anatomy
+
+
+def hook_up(gs: GameState, p: Partner, method: str) -> str | None:
+    """method: 'condom', 'pull_out' or 'inside'."""
+    if gs.energy < 15:
+        return "Too tired for that right now."
+    if method == "condom" and gs.condoms <= 0:
+        return "You're out of condoms. Hit the pharmacy."
+
+    gs.total_hookups += 1
+    p.times += 1
+    fun = 15 + 25 * p.chemistry + gs.charm / 10
+    gs.adjust(mood=fun, energy=-15, hygiene=-25)
+    gs.say(gs.rng.choice(STEAMY).format(n=p.name))
+
+    if method == "condom":
+        gs.condoms -= 1
+        gs.protected_hookups += 1
+        gs.say("Wrapped up and worry-free.")
+    elif method == "pull_out":
+        gs.say("Pulled out in time... probably.")
+    else:
+        gs.say("No condom, no pulling out. Bold.")
+
+    if gs.infection is None and gs.rng.random() < p.sti_risk * STI_FACTOR[method]:
+        gs._infect(gs.rng.choice(["Chlamydia", "Gonorrhea", "Herpes flare-up", "Trichomoniasis"]))
+
+    if can_conceive(gs, p) and gs.conception is None and gs.rng.random() < PREGNANCY_RISK[method]:
+        gs.conception = Conception(day=gs.day, partner=p.name)  # hidden!
+
+    gs.date = None
+    gs.advance()
+    return None
+
+
+# ---- shops ----------------------------------------------------------------
 def buy_condoms(gs: GameState) -> str | None:
     if gs.money < CONDOM_PACK_PRICE:
         return f"Condoms cost ${CONDOM_PACK_PRICE}."
     gs.money -= CONDOM_PACK_PRICE
     gs.condoms += CONDOM_PACK_SIZE
     gs.say(f"Bought a {CONDOM_PACK_SIZE}-pack of condoms. Smart move.")
-    return None  # quick errand, takes no time
+    return None
+
+
+def pregnancy_test(gs: GameState) -> str | None:
+    if gs.money < TEST_PRICE:
+        return f"Tests cost ${TEST_PRICE}."
+    gs.money -= TEST_PRICE
+    c = gs.conception
+    if c and gs.day - c.day >= 3:
+        c.revealed = True
+        gs.adjust(mood=-25)
+        gs.say("Two lines. Positive. Oh no.")
+    elif c:
+        gs.say("Negative... though it might be too early to tell.")
+    else:
+        gs.say("Negative. Phew!")
+    return None
+
+
+def morning_after_pill(gs: GameState) -> str | None:
+    if gs.money < PILL_PRICE:
+        return f"The morning-after pill costs ${PILL_PRICE}."
+    gs.money -= PILL_PRICE
+    c = gs.conception
+    if c and gs.day - c.day <= 1 and gs.rng.random() < 0.9:
+        gs.conception = None
+    who = "You take" if gs.character.kind == "vagina" else "You buy one for your partner. They take"
+    gs.say(f"{who} the morning-after pill. Fingers crossed.")
+    return None
 
 
 def clinic(gs: GameState) -> str | None:
@@ -99,62 +261,17 @@ def clinic(gs: GameState) -> str | None:
     return None
 
 
-def can_hook_up(gs: GameState) -> str | None:
-    if not gs.partners:
-        return "You don't know anyone yet. Go out partying to meet people."
-    if gs.energy < 15:
-        return "Too tired for that right now."
-    return None
-
-
-def hook_up(gs: GameState, partner: Partner, protected: bool) -> str | None:
-    blocked = can_hook_up(gs)
-    if blocked:
-        return blocked
-    if protected and gs.condoms <= 0:
-        return "You're out of condoms. Buy some first."
-
-    gs.total_hookups += 1
-    partner.times += 1
-    fun = 15 + 25 * partner.chemistry
-    gs.adjust(mood=fun, energy=-15, hygiene=-20)
-
-    if protected:
-        gs.condoms -= 1
-        gs.protected_hookups += 1
-        risk = partner.sti_risk * 0.05
-        gs.say(f"You spent a fun, safe night with {partner.name}.")
-    else:
-        risk = partner.sti_risk
-        gs.say(f"You spent a wild night with {partner.name}... no protection.")
-        if gs.scare_days == 0 and gs.rng.random() < 0.2:
-            gs.scare_days = 3
-            who = "you might be" if gs.character.kind == "vagina" else f"{partner.name} might be"
-            gs.say(f"Uh oh, a period is late: {who} pregnant. Anxious days ahead.")
-            gs.adjust(mood=-15)
-
-    if gs.infection is None and gs.rng.random() < risk:
-        gs._infect(gs.rng.choice(["Chlamydia", "Gonorrhea", "Herpes flare-up", "Trichomoniasis"]))
-        gs.say("A few days later something feels off... maybe visit the clinic.")
-
+def get_piercing(gs: GameState, name: str) -> str | None:
+    if name in gs.piercings:
+        return "You already have that one."
+    price, _ = PIERCINGS[name]
+    if gs.money < price:
+        return f"That piercing costs ${price}."
+    gs.money -= price
+    gs.piercings.append(name)
+    gs.piercing_heal = 12
+    gs.adjust(mood=10, health=-3)
+    gs.say(f"New {piercing_label(name, gs.character.kind)} piercing! Ouch... but hot. "
+           "Keep it clean while it heals.")
     gs.advance()
     return None
-
-
-@dataclass(frozen=True)
-class Action:
-    key: str
-    label: str
-    func: Callable[[GameState], str | None]
-    hint: str
-
-
-ACTIONS: list[Action] = [
-    Action("eat", "Eat", eat, f"${MEAL_PRICE} · +Fullness"),
-    Action("shower", "Shower", shower, "Hygiene to 100"),
-    Action("sleep", "Sleep", sleep, "Rest till morning"),
-    Action("work", "Work", work, f"+${WORK_PAY} · -Energy"),
-    Action("party", "Party", party, f"${PARTY_PRICE} · Meet people"),
-    Action("condoms", "Buy condoms", buy_condoms, f"${CONDOM_PACK_PRICE} for {CONDOM_PACK_SIZE}"),
-    Action("clinic", "Clinic", clinic, f"${CLINIC_PRICE} · Test & treat"),
-]

@@ -12,7 +12,7 @@ fi
 
 if ! python3 -c "import pygame" >/dev/null 2>&1; then
   echo "First run: installing the game library (pygame)..."
-  python3 -m pip install --user -r requirements.txt || {
+  python3 -m pip install --user --only-binary :all: -r requirements.txt || {
     echo "Install failed. Send the message above to Claude."
     read -r -p "Press Enter to close..."
     exit 1

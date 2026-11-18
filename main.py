@@ -1,5 +1,5 @@
 import asyncio
-import pygame  # noqa: F401  (listed here so the web build bundles pygame)
+import pygame  # noqa: F401  (listed here so the web build bundles pygame; installed as pygame-ce)
 
 from brady.ui import App
 

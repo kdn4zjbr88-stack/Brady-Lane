@@ -1,7 +1,8 @@
 """Player actions. Each returns None on success or a string explaining why it can't be done."""
 from __future__ import annotations
 
-from .model import PIERCINGS, SWIPES_PER_DAY, Conception, GameState, Partner, piercing_label
+from . import events
+from .model import PIERCINGS, SWIPES_PER_DAY, Baby, Conception, GameState, Partner, piercing_label
 
 CONDOM_PACK_PRICE = 15
 CONDOM_PACK_SIZE = 3
@@ -11,6 +12,8 @@ DRINK_PRICE = 15
 CLINIC_PRICE = 50
 TEST_PRICE = 20
 PILL_PRICE = 45
+FORMULA_PRICE = 8
+CHECKUP_PRICE = 20
 WORK_PAY = 60
 
 # Hidden per-encounter pregnancy odds (exaggerated a bit so choices matter in a 30-day game)
@@ -100,6 +103,8 @@ def work(gs: GameState) -> str | None:
 
 # ---- club -----------------------------------------------------------------
 def drink(gs: GameState) -> str | None:
+    if gs.is_carrier and gs.conception and gs.conception.revealed:
+        return "Rocco: \"Not while you're expecting, hun. Mocktail?\""
     if gs.money < DRINK_PRICE:
         return f"Drinks are ${DRINK_PRICE}."
     gs.money -= DRINK_PRICE
@@ -261,10 +266,15 @@ def clinic(gs: GameState) -> str | None:
     return None
 
 
+def piercing_price(gs: GameState, name: str) -> int:
+    price = PIERCINGS[name][0]
+    return price // 2 if events.active(gs, "flashsale") else price
+
+
 def get_piercing(gs: GameState, name: str) -> str | None:
     if name in gs.piercings:
         return "You already have that one."
-    price, _ = PIERCINGS[name]
+    price = piercing_price(gs, name)
     if gs.money < price:
         return f"That piercing costs ${price}."
     gs.money -= price
@@ -274,4 +284,108 @@ def get_piercing(gs: GameState, name: str) -> str | None:
     gs.say(f"New {piercing_label(name, gs.character.kind)} piercing! Ouch... but hot. "
            "Keep it clean while it heals.")
     gs.advance()
+    return None
+
+
+# ---- pregnancy ------------------------------------------------------------
+def satisfy_craving(gs: GameState) -> str | None:
+    if not gs.craving:
+        return "No cravings right now."
+    if gs.money < MEAL_PRICE:
+        return f"That costs ${MEAL_PRICE}."
+    gs.money -= MEAL_PRICE
+    if gs.is_carrier:
+        gs.adjust(fullness=40, mood=22)
+        gs.say(f"Chef Bean whips up {gs.craving}. You inhale it. Pure bliss.")
+    else:
+        gs.adjust(mood=15)
+        gs.say(f"You bring {gs.conception.partner} {gs.craving}. \"You're the best. Seriously.\"")
+    gs.craving = None
+    gs.advance()
+    return None
+
+
+def prenatal_checkup(gs: GameState) -> str | None:
+    if gs.money < CHECKUP_PRICE:
+        return f"A checkup costs ${CHECKUP_PRICE}."
+    gs.money -= CHECKUP_PRICE
+    gs.adjust(health=12, mood=10)
+    d = gs.pregnancy_days
+    gs.say(f"Dr. Ova: \"Strong heartbeat! About {d} days along. Eat well, rest, and no drinking.\"")
+    gs.advance()
+    return None
+
+
+def deliver(gs: GameState) -> None:
+    """The baby arrives. The UI then shows the customise-your-baby screen."""
+    partner = gs.conception.partner if gs.conception else "your partner"
+    gs.conception = None
+    gs.in_labor = False
+    gs.labor_days = 0
+    gs.craving = None
+    gs.baby = Baby(skin=gs.character.body_color, hair=gs.character.hair_color)
+    gs.baby_needs_setup = True
+    gs.formula += 2
+    gs.adjust(mood=30)
+    if gs.is_carrier:
+        gs.adjust(health=-10, energy=-30)
+    gs.say(f"It's a baby! You and {partner} are parents now. The clinic sends you home with 2 bottles of formula.")
+
+
+def deliver_at_clinic(gs: GameState) -> str | None:
+    if not gs.in_labor:
+        return "Nobody's in labor."
+    if gs.is_carrier:
+        gs.say("Dr. Ova: \"Okay, PUSH!\" Hours of screaming later...")
+    else:
+        gs.say(f"You hold {gs.conception.partner}'s hand through the whole thing. They nearly break your fingers.")
+    deliver(gs)
+    gs.advance()
+    return None
+
+
+# ---- baby -----------------------------------------------------------------
+def buy_formula(gs: GameState) -> str | None:
+    if gs.money < FORMULA_PRICE:
+        return f"Formula costs ${FORMULA_PRICE}."
+    gs.money -= FORMULA_PRICE
+    gs.formula += 2
+    gs.say("Bought 2 bottles of baby formula.")
+    return None
+
+
+def feed_baby(gs: GameState) -> str | None:
+    b = gs.baby
+    if not b:
+        return "You don't have a baby."
+    if b.in_crib:
+        return f"{b.name} is in the crib at home."
+    if gs.formula <= 0:
+        return "Out of formula! The Pharmacy sells it."
+    gs.formula -= 1
+    b.fullness = 100
+    b.crying = b.happiness < 25
+    gs.say(f"{b.name} gulps down a bottle and burps like a trucker.")
+    return None
+
+
+def cuddle_baby(gs: GameState) -> str | None:
+    b = gs.baby
+    if not b:
+        return "You don't have a baby."
+    if b.in_crib:
+        return f"{b.name} is in the crib at home."
+    b.happiness = 100
+    b.crying = b.fullness < 25
+    gs.adjust(mood=8)
+    gs.say(f"You cuddle {b.name}. Tiny giggles. Your heart melts.")
+    return None
+
+
+def crib_baby(gs: GameState) -> str | None:
+    b = gs.baby
+    if not b:
+        return "You don't have a baby."
+    b.in_crib = not b.in_crib
+    gs.say(f"You tuck {b.name} into the crib." if b.in_crib else f"You scoop {b.name} up. Off we go!")
     return None

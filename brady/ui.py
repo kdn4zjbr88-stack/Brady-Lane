@@ -1,43 +1,46 @@
-"""Pygame front end for Brady: character setup, a walkable town, interiors and a phone."""
+"""Pygame front end for Brady in Genitopia: setup, a walkable town, interiors, NPCs, phone and baby."""
 from __future__ import annotations
 
 import asyncio
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import pygame
 
-from . import actions
-from .art import draw_character, draw_person
-from .model import (BODY_COLORS, CHARACTER_TYPES, GAME_LENGTH_DAYS, HAIR_COLORS, PIERCINGS,
-                    SWIPES_PER_DAY, Character, GameState, Partner, piercing_label)
-from .world import BUILDING_BY_KEY, BUILDINGS, ROADS, ROOMS, TOWN_SIZE, TREES, Hotspot
+from . import actions, events, npcs, scenery
+from .art import draw_baby, draw_character, shade
+from .model import (BABY_ACCESSORIES, BODY_COLORS, CHARACTER_TYPES, GAME_LENGTH_DAYS, HAIR_COLORS,
+                    ONESIE_COLORS, PIERCINGS, SWIPES_PER_DAY, TOWN_NAME, Character, GameState, Partner,
+                    piercing_label)
+from .world import BUILDING_BY_KEY, BUILDINGS, ROOMS, TOWN_SIZE, Hotspot, town_solids
 
 W, H = 1100, 720
-BG = (28, 24, 36)
-PANEL = (44, 38, 56)
-TEXT = (238, 232, 245)
-MUTED = (160, 150, 175)
-ACCENT = (232, 90, 140)
-GOOD = (90, 200, 130)
-BAD = (230, 80, 80)
-GRASS = (78, 130, 70)
-ROAD = (70, 70, 78)
+BG = (24, 20, 32)
+PANEL = (48, 42, 62)
+TEXT = (240, 234, 246)
+MUTED = (165, 155, 182)
+ACCENT = (236, 96, 146)
+GOOD = (100, 205, 140)
+BAD = (232, 86, 86)
 
 STAT_COLORS = {
-    "health": (230, 80, 90),
-    "hygiene": (90, 170, 230),
-    "energy": (240, 200, 70),
-    "fullness": (240, 140, 60),
-    "mood": (200, 110, 230),
+    "health": (232, 84, 96),
+    "hygiene": (96, 172, 232),
+    "energy": (242, 202, 76),
+    "fullness": (242, 146, 66),
+    "mood": (202, 116, 232),
 }
 SPEED = 300
-SPRITE_SCALE = 0.4
-OUTFITS = [(200, 60, 90), (60, 120, 200), (40, 40, 40), (230, 200, 60), (120, 60, 180), (220, 220, 220)]
+SCALE = 0.42          # characters in the world
+BABY_SCALE = 0.55
 MOVE_KEYS = (pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d,
              pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT)
+
+
+def F(size, bold=True):
+    return scenery.font(size, bold)
 
 
 class Button:
@@ -45,21 +48,21 @@ class Button:
         self.rect = pygame.Rect(rect)
         self.label, self.sub, self.color = label, sub, color
 
-    def draw(self, surf, fonts, mouse, enabled=True, selected=False):
+    def draw(self, surf, mouse, enabled=True, selected=False):
         hover = self.rect.collidepoint(mouse) and enabled
         col = ACCENT if selected else self.color
         if hover:
-            col = tuple(min(255, c + 30) for c in col)
+            col = shade(col, 1.15)
         if not enabled:
-            col = (55, 50, 62)
-        pygame.draw.rect(surf, col, self.rect, border_radius=10)
-        pygame.draw.rect(surf, (90, 80, 105), self.rect, 2, border_radius=10)
+            col = (58, 54, 66)
+        scenery.alpha_rect(surf, (0, 0, 0, 70), self.rect.move(0, 3), 12)
+        scenery.grad(surf, self.rect, shade(col, 1.1), shade(col, 0.85), 12)
         fg = TEXT if enabled else MUTED
-        lbl = fonts["md"].render(self.label, True, fg)
+        lbl = F(19).render(self.label, True, fg)
         if self.sub:
             surf.blit(lbl, lbl.get_rect(center=(self.rect.centerx, self.rect.centery - 9)))
-            sub = fonts["xs"].render(self.sub, True, MUTED)
-            surf.blit(sub, sub.get_rect(center=(self.rect.centerx, self.rect.centery + 13)))
+            sub = F(13, False).render(self.sub, True, shade(fg, 0.8))
+            surf.blit(sub, sub.get_rect(center=(self.rect.centerx, self.rect.centery + 12)))
         else:
             surf.blit(lbl, lbl.get_rect(center=self.rect.center))
 
@@ -79,19 +82,37 @@ class Popup:
     title: str
     options: list[Option]
     anchor: pygame.Rect | None = None  # pop-up closes when you walk out of this
+    text: str = ""
 
 
 @dataclass
-class Npc:
+class ClubGoer:
     partner: Partner
     x: float
     y: float
     phase: float
-    outfit: tuple
+
+
+@dataclass
+class Walker:
+    x: float = 0
+    y: float = 0
+    dist: float = 0
+    moving: bool = False
 
     @property
-    def zone(self):
-        return pygame.Rect(self.x - 55, self.y - 55, 110, 110)
+    def frame(self):
+        return int(self.dist / 16) % 4 if self.moving else -1
+
+
+@dataclass
+class BabyDraft:
+    name: str = ""
+    skin: str = "Brown"
+    hair: str = "Black"
+    onesie: str = "Sky"
+    accessory: str = "None"
+    extra: dict = field(default_factory=dict)
 
 
 def wrap(text, font, width):
@@ -108,16 +129,20 @@ def wrap(text, font, width):
     return lines
 
 
+def panel(surf, rect, alpha=215, radius=16):
+    rect = pygame.Rect(rect)
+    scenery.alpha_rect(surf, (0, 0, 0, 60), rect.move(0, 4), radius)
+    scenery.alpha_rect(surf, (22, 18, 30, alpha), rect, radius)
+
+
 class App:
     PHONE = pygame.Rect(W - 400, 80, 360, 600)
 
     def __init__(self, seed=None):
         pygame.init()
-        pygame.display.set_caption("Brady")
+        pygame.display.set_caption(f"Brady: {TOWN_NAME}")
         self.screen = pygame.display.set_mode((W, H))
         self.clock = pygame.time.Clock()
-        self.fonts = {k: pygame.font.SysFont(None, v) for k, v in
-                      {"xl": 72, "lg": 40, "md": 28, "sm": 24, "xs": 20}.items()}
         self.seed = seed
         self.char = Character()
         self.scene = "setup"
@@ -127,45 +152,50 @@ class App:
         self.ticks = 0
         self.drag_start: int | None = None
         self.drag_x = 0
+        self.draft = BabyDraft()
 
     # ================================================================ setup
     def setup_buttons(self):
         btns = {}
         for i, kind in enumerate(CHARACTER_TYPES):
-            btns[("kind", kind)] = Button((180 + i * 400, 130, 340, 330), "")
+            btns[("kind", kind)] = Button((190 + i * 380, 120, 340, 350), "", color=(40, 34, 52))
         for i, name in enumerate(BODY_COLORS):
-            btns[("body", name)] = Button((300 + i * 105, 500, 95, 40), name)
+            btns[("body", name)] = Button((300 + i * 108, 492, 98, 38), name)
         for i, name in enumerate(HAIR_COLORS):
-            btns[("hair", name)] = Button((300 + i * 105, 560, 95, 40), name)
-        btns[("start",)] = Button((W // 2 - 110, 640, 220, 56), "Start life", color=(120, 50, 85))
+            btns[("hair", name)] = Button((300 + i * 108, 546, 98, 38), name)
+        btns[("start",)] = Button((W // 2 - 120, 630, 240, 58), f"Move to {TOWN_NAME}", color=(150, 55, 100))
         return btns
 
+    def backdrop(self):
+        scenery.grad(self.screen, (0, 0, W, H), (46, 30, 62), (18, 14, 26))
+        for i in range(5):
+            scenery.alpha_ellipse(self.screen, (236, 96, 146, 14), (i * 260 - 100, 520 - (i % 2) * 60, 420, 300))
+
     def draw_setup(self, mouse):
-        f = self.fonts
-        title = f["xl"].render("BRADY", True, ACCENT)
-        self.screen.blit(title, title.get_rect(center=(W // 2, 50)))
-        sub = f["sm"].render("Pick your character, then keep them healthy, happy and safe for "
-                             f"{GAME_LENGTH_DAYS} days. Adults only.", True, MUTED)
-        self.screen.blit(sub, sub.get_rect(center=(W // 2, 95)))
+        self.backdrop()
+        t = F(54).render("BRADY", True, ACCENT)
+        self.screen.blit(t, t.get_rect(center=(W // 2, 44)))
+        sub = F(17, False).render(f"Life in {TOWN_NAME}. Keep your character healthy, happy and safe for "
+                                  f"{GAME_LENGTH_DAYS} days. Adults only.", True, MUTED)
+        self.screen.blit(sub, sub.get_rect(center=(W // 2, 88)))
         for key, b in self.setup_buttons().items():
             if key[0] == "kind":
-                b.draw(self.screen, f, mouse, selected=self.char.kind == key[1])
-                preview = Character(key[1], self.char.name, self.char.body_color, self.char.hair_color)
-                draw_character(self.screen, preview, (b.rect.centerx, b.rect.centery - 5), 0.95,
-                               ticks=self.ticks)
-                lbl = f["md"].render(key[1].capitalize(), True, TEXT)
-                self.screen.blit(lbl, lbl.get_rect(center=(b.rect.centerx, b.rect.bottom - 18)))
+                b.draw(self.screen, mouse, selected=self.char.kind == key[1])
+                look = Character(key[1], self.char.name, self.char.body_color, self.char.hair_color)
+                draw_character(self.screen, look, (b.rect.centerx, b.rect.bottom - 44), 0.86, ticks=self.ticks)
+                lbl = F(20).render(key[1].capitalize(), True, TEXT)
+                self.screen.blit(lbl, lbl.get_rect(center=(b.rect.centerx, b.rect.bottom - 20)))
             elif key[0] == "body":
-                b.draw(self.screen, f, mouse, selected=self.char.body_color == key[1])
+                b.draw(self.screen, mouse, selected=self.char.body_color == key[1])
             elif key[0] == "hair":
-                b.draw(self.screen, f, mouse, selected=self.char.hair_color == key[1])
+                b.draw(self.screen, mouse, selected=self.char.hair_color == key[1])
             else:
-                b.draw(self.screen, f, mouse)
-        for y, txt in ((520, "Skin"), (580, "Hair")):
-            t = f["md"].render(txt, True, MUTED)
+                b.draw(self.screen, mouse)
+        for y, txt in ((511, "Skin"), (565, "Hair")):
+            t = F(18).render(txt, True, MUTED)
             self.screen.blit(t, t.get_rect(midright=(285, y)))
-        name = f["md"].render(f"Name: {self.char.name}_  (type to rename)", True, TEXT)
-        self.screen.blit(name, name.get_rect(midleft=(30, 668)))
+        name = F(18).render(f"Name: {self.char.name}_   (type to rename)", True, TEXT)
+        self.screen.blit(name, name.get_rect(midleft=(30, 660)))
 
     def click_setup(self, pos):
         for key, b in self.setup_buttons().items():
@@ -191,87 +221,186 @@ class App:
     def start_game(self):
         self.char.name = self.char.name.strip() or "Brady"
         self.gs = GameState(character=self.char, rng=random.Random(self.seed))
-        self.gs.say(f"Welcome to town, {self.char.name}! Walk with WASD/arrows. Press P for your phone.")
+        self.gs.say(f"Welcome to {TOWN_NAME}, {self.char.name}! Walk with WASD/arrows, P for your phone.")
         self.room = "town"
-        self.px, self.py = BUILDING_BY_KEY["home"].outside_spot
-        self.npcs: list[Npc] = []
+        self.me = Walker(*BUILDING_BY_KEY["home"].outside_spot)
+        self.bb = Walker(self.me.x - 40, self.me.y)
+        self.goers: list[ClubGoer] = []
         self.popup: Popup | None = None
         self.phone_open = False
         self.phone_tab = "swipe"
         self.card: Partner | None = None
         self.scene = "world"
 
-    # ================================================================ world
+    # ================================================================ baby setup
+    def baby_buttons(self):
+        btns = {}
+        rows = [("skin", list(BODY_COLORS)), ("hair", list(HAIR_COLORS)), ("onesie", list(ONESIE_COLORS)),
+                ("accessory", list(BABY_ACCESSORIES))]
+        for r, (field_, values) in enumerate(rows):
+            for i, v in enumerate(values):
+                btns[(field_, v)] = Button((470 + i * 112, 190 + r * 70, 104, 40), v)
+        btns[("done",)] = Button((610, 600, 240, 56), "Welcome, baby!", color=(150, 55, 100))
+        return btns
+
+    def draw_baby_setup(self, mouse):
+        self.backdrop()
+        t = F(40).render("It's a baby!", True, ACCENT)
+        self.screen.blit(t, t.get_rect(center=(W // 2, 50)))
+        s = F(17, False).render("Make them yours. They'll follow you everywhere (except the club).", True, MUTED)
+        self.screen.blit(s, s.get_rect(center=(W // 2, 92)))
+        d = self.draft
+        card = pygame.Rect(60, 140, 360, 460)
+        panel(self.screen, card, 180, 24)
+        preview = self.preview_baby()
+        draw_baby(self.screen, preview, (card.centerx, card.bottom - 90), 2.6, self.ticks)
+        nm = F(26).render(d.name or "(type a name)", True, TEXT if d.name else MUTED)
+        self.screen.blit(nm, nm.get_rect(center=(card.centerx, card.bottom - 40)))
+        for key, b in self.baby_buttons().items():
+            if key[0] == "done":
+                b.draw(self.screen, mouse, enabled=bool(d.name.strip()))
+            else:
+                b.draw(self.screen, mouse, selected=getattr(d, key[0]) == key[1])
+        for r, label in enumerate(("Skin", "Hair", "Onesie", "Extra")):
+            t = F(18).render(label, True, MUTED)
+            self.screen.blit(t, t.get_rect(midright=(455, 210 + r * 70)))
+        hint = F(16, False).render("Type the baby's name on your keyboard", True, MUTED)
+        self.screen.blit(hint, hint.get_rect(midleft=(470, 500)))
+
+    def preview_baby(self):
+        from .model import Baby
+        d = self.draft
+        return Baby(name=d.name or "?", skin=d.skin, hair=d.hair, onesie=d.onesie, accessory=d.accessory)
+
+    def click_baby_setup(self, pos):
+        for key, b in self.baby_buttons().items():
+            if b.hit(pos):
+                if key[0] == "done":
+                    self.finish_baby()
+                else:
+                    setattr(self.draft, key[0], key[1])
+
+    def key_baby_setup(self, e):
+        d = self.draft
+        if e.key == pygame.K_BACKSPACE:
+            d.name = d.name[:-1]
+        elif e.key == pygame.K_RETURN:
+            self.finish_baby()
+        elif e.unicode and e.unicode.isprintable() and len(d.name) < 12:
+            d.name += e.unicode
+
+    def finish_baby(self):
+        d, b = self.draft, self.gs.baby
+        if not d.name.strip():
+            return
+        b.name, b.skin, b.hair, b.onesie, b.accessory = d.name.strip(), d.skin, d.hair, d.onesie, d.accessory
+        self.gs.baby_needs_setup = False
+        self.gs.say(f"Say hi to {b.name}! Press B any time to feed or cuddle them.")
+        self.bb.x, self.bb.y = self.me.x - 40, self.me.y
+        self.scene = "world"
+
+    # ================================================================ world: geometry
     def room_size(self):
         return TOWN_SIZE if self.room == "town" else ROOMS[self.room].size
 
     def solids(self):
-        if self.room == "town":
-            return [b.rect for b in BUILDINGS]
-        return ROOMS[self.room].solids()
+        return town_solids() if self.room == "town" else ROOMS[self.room].solids()
+
+    def npc_pos(self, n: npcs.Npc):
+        if not n.patrol:
+            return n.pos
+        pts = n.patrol + [n.patrol[0]]
+        segs = [math.dist(a, b) for a, b in zip(pts, pts[1:])]
+        d = (self.ticks / 1000 * 55) % sum(segs)
+        for (a, b), L in zip(zip(pts, pts[1:]), segs):
+            if d <= L:
+                t = d / L
+                return a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            d -= L
+        return n.pos
 
     def hotspots(self) -> list[Hotspot]:
         if self.room == "town":
-            return [Hotspot(f"door:{b.key}", b.door_zone, b.name) for b in BUILDINGS]
+            spots = [Hotspot(f"event:{i}", pygame.Rect(e.x - 70, e.y - 60, 140, 110), e.title)
+                     for i, e in enumerate(self.gs.events)]
+            for n in npcs.npcs_in("town"):
+                x, y = self.npc_pos(n)
+                spots.append(Hotspot(f"talk:{n.key}", pygame.Rect(x - 55, y - 50, 110, 90), n.name))
+            return spots + [Hotspot(f"door:{b.key}", b.door_zone, b.name) for b in BUILDINGS]
         spots = list(ROOMS[self.room].hotspots)
         if self.room == "club":
-            spots = [Hotspot(f"npc:{i}", n.zone, n.partner.name) for i, n in enumerate(self.npcs)] + spots
+            spots = [Hotspot(f"goer:{i}", pygame.Rect(g.x - 55, g.y - 55, 110, 110), g.partner.name)
+                     for i, g in enumerate(self.goers)] + spots
         return spots
 
     def feet(self):
-        return pygame.Rect(self.px - 16, self.py - 10, 32, 20)
+        return pygame.Rect(self.me.x - 16, self.me.y - 10, 32, 20)
 
     def move(self, dt):
-        if self.phone_open:
-            return
         keys = pygame.key.get_pressed()
         dx = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
         dy = (keys[pygame.K_s] or keys[pygame.K_DOWN]) - (keys[pygame.K_w] or keys[pygame.K_UP])
-        if not (dx or dy):
-            return
-        self.step(dx, dy, dt)
+        if self.phone_open or not (dx or dy):
+            self.me.moving = False
+        else:
+            self.step(dx, dy, dt)
+        self.follow_baby(dt)
 
     def step(self, dx, dy, dt):
         norm = math.hypot(dx, dy)
         rw, rh = self.room_size()
         wall = 0 if self.room == "town" else 18
+        top = 0 if self.room == "town" else 64
+        solids = self.solids()
+        x0, y0 = self.me.x, self.me.y
         for axis, d in (("x", dx), ("y", dy)):
             if not d:
                 continue
-            old = (self.px, self.py)
+            old = (self.me.x, self.me.y)
             if axis == "x":
-                self.px = max(wall + 16, min(rw - wall - 16, self.px + d / norm * SPEED * dt))
+                self.me.x = max(wall + 16, min(rw - wall - 16, self.me.x + d / norm * SPEED * dt))
             else:
-                self.py = max(wall + 30, min(rh - wall - 10, self.py + d / norm * SPEED * dt))
-            if self.feet().collidelist(self.solids()) != -1:
-                self.px, self.py = old
-        # walking out of an anchored pop-up closes it
-        if self.popup and self.popup.anchor and not self.popup.anchor.collidepoint(self.px, self.py):
+                self.me.y = max(top + 20, min(rh - wall - 10, self.me.y + d / norm * SPEED * dt))
+            if self.feet().collidelist(solids) != -1:
+                self.me.x, self.me.y = old
+        moved = math.hypot(self.me.x - x0, self.me.y - y0)
+        self.me.dist += moved
+        self.me.moving = moved > 0
+        if self.popup and self.popup.anchor and not self.popup.anchor.collidepoint(self.me.x, self.me.y):
             self.popup = None
+
+    def follow_baby(self, dt):
+        if not self.gs.baby_with_you:
+            return
+        tx, ty = self.me.x - 38, self.me.y + 4
+        d = math.hypot(tx - self.bb.x, ty - self.bb.y)
+        if d > 30:
+            step = min(d - 20, SPEED * 0.95 * dt)
+            self.bb.x += (tx - self.bb.x) / d * step
+            self.bb.y += (ty - self.bb.y) / d * step
+            self.bb.dist += step
+            self.bb.moving = True
+        else:
+            self.bb.moving = False
 
     def current_spot(self) -> Hotspot | None:
         for h in self.hotspots():
-            if h.zone.collidepoint(self.px, self.py):
+            if h.zone.collidepoint(self.me.x, self.me.y):
                 return h
         return None
 
     def warp(self, room, pos=None):
         self.room = room
         self.popup = None
-        if room == "town":
-            self.px, self.py = pos
-        else:
-            self.px, self.py = ROOMS[room].spawn
+        self.me.x, self.me.y = pos if room == "town" else ROOMS[room].spawn
+        self.bb.x, self.bb.y = self.me.x - 40, self.me.y + 4
         if room == "club":
-            self.spawn_club_npcs()
+            rng = self.gs.rng
+            anat = None if self.gs.show_me == "everyone" else self.gs.show_me
+            self.goers = [ClubGoer(Partner.random(rng, anat), rng.randint(460, 800), rng.randint(270, 500),
+                                   rng.random() * 6) for _ in range(rng.randint(3, 4))]
 
-    def spawn_club_npcs(self):
-        rng = self.gs.rng
-        anat = None if self.gs.show_me == "everyone" else self.gs.show_me
-        self.npcs = [Npc(Partner.random(rng, anat), rng.randint(420, 800), rng.randint(230, 500),
-                         rng.random() * 6, rng.choice(OUTFITS)) for _ in range(rng.randint(3, 4))]
-
-    # ---- turning hotspots into choices ---------------------------------
+    # ================================================================ choices
     def do(self, fn, *args, then=None):
         def run():
             err = fn(self.gs, *args)
@@ -279,54 +408,116 @@ class App:
                 self.show_toast(err)
             elif then:
                 then()
-            if self.gs.game_over:
-                self.scene = "over"
+            self.after_action()
         return run
+
+    def after_action(self):
+        if self.gs.game_over:
+            self.scene = "over"
+        elif self.gs.baby_needs_setup:
+            b = self.gs.baby
+            self.draft = BabyDraft(skin=b.skin, hair=b.hair)
+            self.popup = None
+            self.scene = "baby_setup"
+
+    def talk(self, key):
+        n = npcs.NPC_BY_KEY[key]
+        line = npcs.pick_line(self.gs, n)
+        spot = self.current_spot()
+
+        def answer(reply):
+            def run():
+                npcs.respond(self.gs, n, line, reply)
+                self.popup = None
+                self.after_action()
+            return run
+
+        self.popup = Popup(f"{n.name} · {n.role}", [Option(r.text, "", answer(r)) for r in line.replies],
+                           anchor=spot.zone if spot else None, text=f"\"{line.text}\"")
+
+    def chat_option(self, spot):
+        if not spot.npc:
+            return []
+        n = npcs.NPC_BY_KEY[spot.npc]
+        return [Option(f"Chat with {n.name.split()[-1]}", n.role, lambda: self.talk(n.key))]
 
     def options_for(self, spot: Hotspot) -> Popup | None:
         gs, key, A = self.gs, spot.key, actions
+        if key.startswith("talk:"):
+            n = npcs.NPC_BY_KEY[key[5:]]
+            return Popup(n.name, [Option("Talk", n.role, lambda: self.talk(n.key))])
+        if key.startswith("event:"):
+            ev = gs.events[int(key[6:])]
+            opts = [Option(o.label, o.sub, self.do(o.fn) if o.fn else None) for o in events.options(gs, ev)]
+            return Popup(ev.title, opts, text=events.intro(ev))
         if key.startswith("door:"):
             b = BUILDING_BY_KEY[key[5:]]
             if b.key == "club" and not gs.is_night_time:
                 return Popup(b.name, [Option("Closed", "Opens in the evening", None)])
-            if b.key in ("office", "clinic", "diner", "pharmacy", "studio") and gs.time_name == "Night":
+            if b.key == "club" and gs.baby_with_you:
+                return Popup(b.name, [Option("Bouncer: \"No babies!\"", "Leave the baby in the crib at home", None)])
+            if b.key in ("office", "diner", "pharmacy", "studio") and gs.time_name == "Night":
                 return Popup(b.name, [Option("Closed", "Come back in the morning", None)])
             if b.key == "apartments" and not gs.date:
                 return Popup(b.name, [Option("Locked", "Nobody's expecting you. Text a match.", None)])
             sub = f"{gs.date.name} is waiting" if b.key == "apartments" else ""
+            if b.key == "clinic" and gs.in_labor:
+                sub = "Labor! Hurry!"
             return Popup(b.name, [Option("Go inside", sub, lambda: self.warp(b.key))])
         if key == "exit":
             b = BUILDING_BY_KEY[self.room]
-            return Popup("Exit", [Option("Leave", "Back to town", lambda: self.warp("town", b.outside_spot))])
+            return Popup("Exit", [Option("Leave", f"Back to {TOWN_NAME}", lambda: self.warp("town", b.outside_spot))])
         simple = {
             "sleep": ("Your bed", "Sleep", "Skip to morning, full energy", A.sleep),
             "mirror": ("Mirror", "Check yourself out", "See your charm", A.mirror),
             "snack": ("Fridge", "Grab a snack", f"${A.SNACK_PRICE} · +20 fullness", A.snack),
             "shower": ("Bathroom", "Take a shower", "Hygiene to 100", A.shower),
             "pee": ("Bathroom", "Use the toilet", "", A.pee),
-            "eat": ("Diner", "Order the burger meal", f"${A.MEAL_PRICE} · +45 fullness", A.eat),
-            "work": ("Office", "Work a shift", f"+${A.WORK_PAY} · tiring", A.work),
-            "clinic": ("Doctor", "STI test & treatment", f"${A.CLINIC_PRICE}", A.clinic),
+            "work": ("Your desk", "Work a shift", f"+${A.WORK_PAY} · tiring", A.work),
             "dance": ("Dance floor", "Dance", "+Mood, sweaty", A.dance),
-            "bar": ("Bar", "Order a drink", f"${A.DRINK_PRICE} · +Mood", A.drink),
         }
         if key in simple:
             title, label, sub, fn = simple[key]
             return Popup(title, [Option(label, sub, self.do(fn))])
+        if key == "bar":
+            return Popup("Bar", [Option("Order a drink", f"${A.DRINK_PRICE} · +Mood", self.do(A.drink)),
+                                 *self.chat_option(spot)])
+        if key == "eat":
+            opts = [Option("Burger meal", f"${A.MEAL_PRICE} · +45 fullness", self.do(A.eat))]
+            if gs.craving:
+                who = "you" if gs.is_carrier else gs.conception.partner
+                opts.insert(0, Option(f"Craving: {gs.craving}", f"${A.MEAL_PRICE} · for {who}",
+                                      self.do(A.satisfy_craving)))
+            return Popup("Bean's Diner", opts + self.chat_option(spot))
+        if key == "crib":
+            b = gs.baby
+            if not b:
+                return Popup("Crib", [Option("An empty crib", "Waiting for a little one...", None)])
+            label = f"Pick up {b.name}" if b.in_crib else f"Put {b.name} in the crib"
+            sub = "They'll come with you" if b.in_crib else "Safe at home while you go out"
+            return Popup("Crib", [Option(label, sub, self.do(A.crib_baby))])
         if key == "pharmacy":
             return Popup("Pharmacy", [
                 Option(f"Condoms x{A.CONDOM_PACK_SIZE}", f"${A.CONDOM_PACK_PRICE}", self.do(A.buy_condoms)),
                 Option("Pregnancy test", f"${A.TEST_PRICE}", self.do(A.pregnancy_test)),
-                Option("Morning-after pill", f"${A.PILL_PRICE} · works best within a day",
-                       self.do(A.morning_after_pill)),
-            ])
+                Option("Morning-after pill", f"${A.PILL_PRICE} · best within a day", self.do(A.morning_after_pill)),
+                Option("Baby formula x2", f"${A.FORMULA_PRICE}", self.do(A.buy_formula)),
+                *self.chat_option(spot)])
+        if key == "clinic":
+            opts = []
+            if gs.in_labor:
+                opts.append(Option("Deliver the baby!", "Free at Genitopia General", self.do(A.deliver_at_clinic)))
+            elif gs.conception and gs.conception.revealed and gs.is_carrier:
+                opts.append(Option("Prenatal checkup", f"${A.CHECKUP_PRICE} · +Health", self.do(A.prenatal_checkup)))
+            opts.append(Option("STI test & treatment", f"${A.CLINIC_PRICE}", self.do(A.clinic)))
+            return Popup("Dr. Ova", opts + self.chat_option(spot))
         if key == "studio":
             return Popup("Piercings", [
-                Option(piercing_label(n, gs.character.kind), f"${p} · +{c} charm",
+                Option(piercing_label(n, gs.character.kind), f"${A.piercing_price(gs, n)} · +{c} charm",
                        self.do(A.get_piercing, n) if n not in gs.piercings else None)
-                for n, (p, c) in PIERCINGS.items()])
-        if key.startswith("npc:"):
-            p = self.npcs[int(key[4:])].partner
+                for n, (_, c) in PIERCINGS.items()] + self.chat_option(spot))
+        if key.startswith("goer:"):
+            p = self.goers[int(key[5:])].partner
             title = f"{p.name}, {p.age} · {p.vibe}"
             if p in gs.matches:
                 go = self.do(A.go_home_with, p, then=lambda: self.warp("apartments"))
@@ -373,193 +564,108 @@ class App:
             fn()
         return run
 
+    def baby_menu(self):
+        b = self.gs.baby
+        if not b:
+            return self.show_toast("You don't have a baby.")
+        if b.in_crib:
+            return self.show_toast(f"{b.name} is in the crib at home.")
+        self.popup = Popup(f"{b.name}", [
+            Option("Feed a bottle", f"{self.gs.formula} bottles left",
+                   self.close_after(self.do(actions.feed_baby)) if self.gs.formula else None),
+            Option("Cuddle", "+Baby happiness, +Mood", self.close_after(self.do(actions.cuddle_baby))),
+        ], text=f"Fed {int(b.fullness)} · Happy {int(b.happiness)}" + ("  · CRYING" if b.crying else ""))
+
     def active_popup(self) -> Popup | None:
         if self.popup:
             return self.popup
         spot = self.current_spot()
         return self.options_for(spot) if spot else None
 
-    def popup_buttons(self, popup):
-        x, w, h = W - 400, 380, 52
-        top = H - 20 - len(popup.options) * (h + 8)
-        return [Button((x, top + i * (h + 8), w, h), f"{i + 1}. {o.label}", o.sub)
+    def popup_layout(self, popup):
+        x, w, h = W - 410, 390, 50
+        lines = wrap(popup.text, F(16, False), w - 24) if popup.text else []
+        top = H - 18 - len(popup.options) * (h + 8)
+        btns = [Button((x, top + i * (h + 8), w, h), f"{i + 1}. {o.label}", o.sub, color=(70, 58, 88))
                 for i, o in enumerate(popup.options)]
+        text_top = top - 10 - len(lines) * 20
+        return btns, lines, text_top
 
     def choose(self, i):
         popup = self.active_popup()
         if popup and 0 <= i < len(popup.options) and popup.options[i].fn:
             popup.options[i].fn()
 
-    # ---- drawing -------------------------------------------------------
+    # ================================================================ world: drawing
     def camera(self):
         rw, rh = self.room_size()
-        cx = (rw - W) / 2 if rw <= W else max(0, min(rw - W, self.px - W / 2))
-        cy = (rh - H) / 2 - 20 if rh <= H else max(0, min(rh - H, self.py - H / 2))
+        cx = (rw - W) / 2 if rw <= W else max(0, min(rw - W, self.me.x - W / 2))
+        cy = (rh - H) / 2 - 20 if rh <= H else max(0, min(rh - H, self.me.y - H / 2))
         return int(cx), int(cy)
-
-    def draw_town(self, cam):
-        s, f = self.screen, self.fonts
-        ox, oy = cam
-        s.fill(GRASS)
-        for r in ROADS:
-            pygame.draw.rect(s, ROAD, r.move(-ox, -oy))
-        for x in range(0, TOWN_SIZE[0], 80):
-            pygame.draw.rect(s, (220, 210, 120), (x - ox, 816 - oy, 40, 6))
-        for y in range(0, TOWN_SIZE[1], 80):
-            pygame.draw.rect(s, (220, 210, 120), (1297 - ox, y - oy, 6, 40))
-        for tx, ty in TREES:
-            pygame.draw.circle(s, (50, 95, 50), (tx - ox, ty - oy), 38)
-            pygame.draw.circle(s, (70, 120, 65), (tx - ox - 8, ty - oy - 8), 24)
-        lit = self.gs.is_night_time
-        for b in BUILDINGS:
-            r = b.rect.move(-ox, -oy)
-            pygame.draw.rect(s, (40, 70, 40), r.move(8, 8), border_radius=6)
-            pygame.draw.rect(s, b.color, r, border_radius=6)
-            roof = pygame.Rect(r.left, r.top, r.width, 60)
-            pygame.draw.rect(s, b.roof, roof, border_radius=6)
-            for wx in range(r.left + 30, r.right - 50, 70):
-                for wy in range(r.top + 90, r.bottom - 60, 80):
-                    pygame.draw.rect(s, (250, 220, 120) if lit else (150, 190, 220), (wx, wy, 34, 34))
-            pygame.draw.rect(s, (60, 40, 30), b.door.move(-ox, -oy))
-            sign = f["md"].render(b.name, True, (255, 255, 255))
-            s.blit(sign, sign.get_rect(center=roof.center))
-
-    def draw_room(self, cam):
-        s, f = self.screen, self.fonts
-        ox, oy = cam
-        room = ROOMS[self.room]
-        s.fill((15, 12, 20))
-        rw, rh = room.size
-        area = pygame.Rect(-ox, -oy, rw, rh)
-        pygame.draw.rect(s, room.floor, area)
-        for fu in sorted(room.furniture, key=lambda fu: fu.solid):
-            r = fu.rect.move(-ox, -oy)
-            pygame.draw.rect(s, fu.color, r, border_radius=8)
-            if fu.solid:
-                pygame.draw.rect(s, (0, 0, 0), r, 2, border_radius=8)
-            if fu.label:
-                t = f["xs"].render(fu.label, True, (255, 255, 255))
-                s.blit(t, t.get_rect(center=r.center))
-        if self.room == "club":  # disco lights and dancers
-            for i in range(6):
-                a = self.ticks / 500 + i
-                x = 610 + math.cos(a * 1.3) * 180 - ox
-                y = 360 + math.sin(a) * 140 - oy
-                glow = pygame.Surface((120, 120), pygame.SRCALPHA)
-                col = [(255, 60, 160), (60, 200, 255), (255, 230, 60)][i % 3]
-                pygame.draw.circle(glow, (*col, 70), (60, 60), 60)
-                s.blit(glow, (x - 60, y - 60))
-            for n in self.npcs:
-                p = n.partner
-                draw_person(s, (n.x - ox, n.y - oy), p.skin, p.hair, 1.3, self.ticks * 2, n.phase, n.outfit)
-                t = f["xs"].render(p.name, True, TEXT)
-                s.blit(t, t.get_rect(center=(n.x - ox, n.y - oy - 60)))
-        if self.room == "apartments" and self.gs.date:
-            p = self.gs.date
-            draw_person(s, (520 - ox, 220 - oy), p.skin, p.hair, 1.4, self.ticks, 0, (200, 60, 90))
-            t = f["sm"].render(p.name, True, TEXT)
-            s.blit(t, t.get_rect(center=(520 - ox, 160 - oy)))
-        pygame.draw.rect(s, (90, 75, 65), area, 18)
-        mat = pygame.Rect(rw // 2 - 60 - ox, rh - 22 - oy, 120, 22)
-        pygame.draw.rect(s, (160, 60, 60), mat)
-        t = f["xs"].render("EXIT", True, (255, 255, 255))
-        s.blit(t, t.get_rect(center=mat.center))
-
-    def draw_player(self, cam):
-        gs = self.gs
-        keys = pygame.key.get_pressed()
-        moving = any(keys[k] for k in MOVE_KEYS) and not self.phone_open
-        hop = abs(math.sin(self.ticks / 90)) * 8 if moving else 0
-        x, y = self.px - cam[0], self.py - cam[1]
-        pygame.draw.ellipse(self.screen, (0, 0, 0), (x - 28, y - 8, 56, 16))
-        draw_character(self.screen, gs.character, (x, y - 108 * SPRITE_SCALE - hop), SPRITE_SCALE,
-                       gs.mood, gs.energy, gs.hygiene, gs.infection is not None, self.ticks, gs.piercings)
-
-    def draw_hud(self):
-        s, f, gs = self.screen, self.fonts, self.gs
-        bar = pygame.Surface((W, 58), pygame.SRCALPHA)
-        bar.fill((20, 16, 28, 220))
-        s.blit(bar, (0, 0))
-        s.blit(f["md"].render(f"Day {gs.day}/{GAME_LENGTH_DAYS} · {gs.time_name}", True, TEXT), (14, 8))
-        where = "Town" if self.room == "town" else ROOMS[self.room].name
-        s.blit(f["xs"].render(where, True, MUTED), (14, 34))
-        for i, stat in enumerate(STAT_COLORS):
-            x = 230 + i * 120
-            val = getattr(gs, stat)
-            s.blit(f["xs"].render(stat.capitalize(), True, MUTED), (x, 8))
-            pygame.draw.rect(s, (50, 45, 60), (x, 28, 106, 14), border_radius=6)
-            pygame.draw.rect(s, STAT_COLORS[stat] if val > 25 else BAD,
-                             (x, 28, int(106 * val / 100), 14), border_radius=6)
-        info = f["sm"].render(f"${gs.money}   Condoms {gs.condoms}   Charm {gs.charm}", True, GOOD)
-        s.blit(info, info.get_rect(topright=(W - 14, 10)))
-        hint = f["xs"].render("P: phone   1-5 / E: choose", True, MUTED)
-        s.blit(hint, hint.get_rect(topright=(W - 14, 36)))
-        sym = gs.symptoms()
-        if sym:
-            t = f["sm"].render("  ·  ".join(sym), True, BAD)
-            r = t.get_rect(midtop=(W // 2, 66))
-            pygame.draw.rect(s, (30, 20, 30), r.inflate(20, 8), border_radius=8)
-            s.blit(t, r)
-
-    def draw_diary(self):
-        s, f = self.screen, self.fonts
-        panel = pygame.Rect(14, H - 104, 640, 90)
-        surf = pygame.Surface(panel.size, pygame.SRCALPHA)
-        surf.fill((20, 16, 28, 200))
-        s.blit(surf, panel)
-        y = panel.bottom - 10
-        for msg in reversed(self.gs.log):
-            for line in reversed(wrap(msg, f["sm"], panel.width - 24)):
-                y -= 22
-                if y < panel.top + 6:
-                    return
-                col = TEXT if msg is self.gs.log[-1] else MUTED
-                s.blit(f["sm"].render(line, True, col), (panel.left + 12, y))
-            y -= 4
-
-    def draw_popup(self, mouse):
-        popup = self.active_popup()
-        if not popup:
-            return
-        s, f = self.screen, self.fonts
-        btns = self.popup_buttons(popup)
-        t = f["md"].render(popup.title, True, ACCENT)
-        r = t.get_rect(bottomleft=(btns[0].rect.left + 4, btns[0].rect.top - 8))
-        bg = pygame.Rect(r.left - 12, r.top - 8, 404, btns[-1].rect.bottom - r.top + 16)
-        pygame.draw.rect(s, (20, 16, 28), bg, border_radius=12)
-        s.blit(t, r)
-        for b, o in zip(btns, popup.options):
-            b.draw(s, f, mouse, enabled=o.fn is not None)
-
-    def draw_minimap(self):
-        if self.room != "town":
-            return
-        k = 0.075
-        mw, mh = int(TOWN_SIZE[0] * k), int(TOWN_SIZE[1] * k)
-        mm = pygame.Rect(W - mw - 14, 100, mw, mh)
-        pygame.draw.rect(self.screen, (40, 70, 40), mm)
-        for r in ROADS:
-            pygame.draw.rect(self.screen, ROAD, (mm.x + r.x * k, mm.y + r.y * k, r.w * k, r.h * k))
-        for b in BUILDINGS:
-            r = b.rect
-            pygame.draw.rect(self.screen, b.roof, (mm.x + r.x * k, mm.y + r.y * k, r.w * k, r.h * k))
-        pygame.draw.circle(self.screen, ACCENT, (int(mm.x + self.px * k), int(mm.y + self.py * k)), 4)
-        pygame.draw.rect(self.screen, TEXT, mm, 1)
-
-    def draw_night(self):
-        if self.room != "town":
-            return
-        alpha = [0, 15, 70, 130][self.gs.slot]
-        if alpha:
-            o = pygame.Surface((W, H), pygame.SRCALPHA)
-            o.fill((15, 15, 60, alpha))
-            self.screen.blit(o, (0, 0))
 
     def draw_world(self, mouse):
         cam = self.camera()
-        (self.draw_town if self.room == "town" else self.draw_room)(cam)
-        self.draw_player(cam)
-        self.draw_night()
+        ox, oy = cam
+        s, gs = self.screen, self.gs
+        if self.room == "town":
+            bg = scenery.town_surface()
+            occluders = scenery.town_occluders()
+        else:
+            room = ROOMS[self.room]
+            bg = scenery.room_surface(room)
+            occluders = scenery.room_occluders(room)
+            s.fill((12, 10, 16))
+        s.blit(bg, (0, 0), pygame.Rect(ox, oy, W, H)) if self.room == "town" else s.blit(bg, (-ox, -oy))
+        if self.room == "club":
+            scenery.dance_floor(s, ROOMS["club"].furniture[0].rect.move(-ox, -oy), self.ticks)
+
+        drawables = []  # (sort_y, fn)
+        view = pygame.Rect(ox - 200, oy - 200, W + 400, H + 400)
+
+        def person(look, x, y, frame=-1, scale=SCALE, **kw):
+            if view.collidepoint(x, y):
+                drawables.append((y, lambda: draw_character(s, look, (x - ox, y - oy), scale, ticks=self.ticks,
+                                                            frame=frame, **kw)))
+
+        person(gs.character, self.me.x, self.me.y, self.me.frame, mood=gs.mood, energy=gs.energy,
+               hygiene=gs.hygiene, infected=gs.infection is not None, piercings=gs.piercings, belly=gs.belly_stage)
+        b = gs.baby
+        if b and not gs.baby_needs_setup:
+            if not b.in_crib:
+                drawables.append((self.bb.y, lambda: draw_baby(s, b, (self.bb.x - ox, self.bb.y - oy), BABY_SCALE,
+                                                               self.ticks, self.bb.frame)))
+            elif self.room == "home":
+                drawables.append((150, lambda: draw_baby(s, b, (360 - ox, 128 - oy), BABY_SCALE * 0.9, self.ticks)))
+        for n in npcs.npcs_in(self.room):
+            x, y = self.npc_pos(n)
+            frame = int(self.ticks / 120) % 4 if n.patrol else -1
+            person(n.look, x, y, frame)
+            drawables.append((y + 1, lambda x=x, y=y, n=n: self.name_tag(n.name, x - ox, y - oy - 132)))
+        if self.room == "town":
+            for ev in gs.events:
+                if view.collidepoint(ev.x, ev.y):
+                    drawables.append((ev.y, lambda ev=ev: scenery.draw_event(s, ev, (ev.x - ox, ev.y - oy),
+                                                                             self.ticks, SCALE)))
+        if self.room == "club":
+            for g in self.goers:
+                f = int(self.ticks / 140 + g.phase) % 4
+                person(g.partner.look, g.x, g.y, f)
+                drawables.append((g.y + 1, lambda g=g: self.name_tag(g.partner.name, g.x - ox, g.y - oy - 132)))
+        if self.room == "apartments" and gs.date:
+            person(gs.date.look, 520, 250)
+            drawables.append((251, lambda: self.name_tag(gs.date.name, 520 - ox, 250 - oy - 132)))
+        for sort_y, rect in occluders:
+            if view.colliderect(rect):
+                drawables.append((sort_y, lambda r=rect: s.blit(bg, (r.x - ox, r.y - oy), r)))
+        for _, fn in sorted(drawables, key=lambda d: d[0]):
+            fn()
+
+        if self.room == "town":
+            scenery.town_lights(s, cam, gs.slot, self.ticks)
+            if gs.raining:
+                scenery.rain(s, self.ticks)
+        elif self.room == "club":
+            scenery.club_lights(s, cam, self.ticks)
         self.draw_hud()
         self.draw_minimap()
         self.draw_diary()
@@ -568,12 +674,93 @@ class App:
         else:
             self.draw_popup(mouse)
 
+    def name_tag(self, name, x, y):
+        t = F(13).render(name, True, (255, 255, 255))
+        r = t.get_rect(center=(x, y))
+        scenery.alpha_rect(self.screen, (0, 0, 0, 120), r.inflate(12, 6), 8)
+        self.screen.blit(t, r)
+
+    def draw_hud(self):
+        s, gs = self.screen, self.gs
+        panel(s, (8, 8, W - 16, 56), 200, 14)
+        s.blit(F(19).render(f"Day {gs.day}/{GAME_LENGTH_DAYS} · {gs.time_name}", True, TEXT), (22, 16))
+        where = TOWN_NAME if self.room == "town" else ROOMS[self.room].name
+        if gs.raining and self.room == "town":
+            where += " · raining"
+        s.blit(F(13, False).render(where, True, MUTED), (22, 40))
+        for i, stat in enumerate(STAT_COLORS):
+            x = 228 + i * 112
+            val = getattr(gs, stat)
+            s.blit(F(12, False).render(stat.capitalize(), True, MUTED), (x, 16))
+            scenery.alpha_rect(s, (255, 255, 255, 25), (x, 34, 98, 12), 6)
+            col = STAT_COLORS[stat] if val > 25 else BAD
+            if val > 1:
+                scenery.grad(s, (x, 34, max(12, int(98 * val / 100)), 12), shade(col, 1.15), shade(col, 0.85), 6)
+        info = F(16).render(f"${gs.money}  ·  Condoms {gs.condoms}  ·  Charm {gs.charm}", True, GOOD)
+        s.blit(info, info.get_rect(topright=(W - 22, 16)))
+        hint = "P phone · B baby · 1-5 choose" if gs.baby else "P phone · 1-5 / E choose"
+        h = F(12, False).render(hint, True, MUTED)
+        s.blit(h, h.get_rect(topright=(W - 22, 40)))
+        sym = gs.symptoms()
+        if sym:
+            t = F(15).render("  ·  ".join(sym), True, (255, 200, 200))
+            r = t.get_rect(midtop=(W // 2, 72))
+            scenery.alpha_rect(s, (120, 30, 40, 200), r.inflate(24, 10), 10)
+            s.blit(t, r)
+
+    def draw_diary(self):
+        s = self.screen
+        box = pygame.Rect(12, H - 108, 640, 96)
+        panel(s, box, 185, 14)
+        y = box.bottom - 10
+        f = F(15, False)
+        for msg in reversed(self.gs.log):
+            for line in reversed(wrap(msg, f, box.width - 28)):
+                y -= 20
+                if y < box.top + 6:
+                    return
+                col = TEXT if msg is self.gs.log[-1] else MUTED
+                s.blit(f.render(line, True, col), (box.left + 14, y))
+            y -= 4
+
+    def draw_popup(self, mouse):
+        popup = self.active_popup()
+        if not popup:
+            return
+        s = self.screen
+        btns, lines, text_top = self.popup_layout(popup)
+        title = F(18).render(popup.title, True, ACCENT)
+        title_y = text_top - 26
+        bg = pygame.Rect(btns[0].rect.left - 10, title_y - 10, 410, btns[-1].rect.bottom - title_y + 20)
+        panel(s, bg, 225, 16)
+        s.blit(title, (bg.left + 14, title_y))
+        for i, line in enumerate(lines):
+            s.blit(F(16, False).render(line, True, TEXT), (bg.left + 14, text_top + i * 20))
+        for b, o in zip(btns, popup.options):
+            b.draw(s, mouse, enabled=o.fn is not None)
+
+    def draw_minimap(self):
+        if self.room != "town":
+            return
+        k = 0.072
+        mw, mh = int(TOWN_SIZE[0] * k), int(TOWN_SIZE[1] * k)
+        mm = pygame.Rect(W - mw - 16, 76, mw, mh)
+        small = scenery._cache.get("minimap")
+        if small is None:
+            small = scenery._cache["minimap"] = pygame.transform.smoothscale(scenery.town_surface(), (mw, mh))
+        panel(self.screen, mm.inflate(10, 10), 200, 10)
+        self.screen.blit(small, mm)
+        for ev in self.gs.events:
+            pygame.draw.circle(self.screen, (255, 220, 90), (mm.x + ev.x * k, mm.y + ev.y * k), 3)
+        pygame.draw.circle(self.screen, (255, 255, 255), (mm.x + self.me.x * k, mm.y + self.me.y * k), 5)
+        pygame.draw.circle(self.screen, ACCENT, (mm.x + self.me.x * k, mm.y + self.me.y * k), 4)
+
     def click_world(self, pos):
         if self.phone_open:
             return self.click_phone(pos)
         popup = self.active_popup()
         if popup:
-            for i, b in enumerate(self.popup_buttons(popup)):
+            for i, b in enumerate(self.popup_layout(popup)[0]):
                 if b.hit(pos):
                     return self.choose(i)
 
@@ -588,7 +775,12 @@ class App:
             if self.phone_tab == "swipe" and e.key in (pygame.K_LEFT, pygame.K_RIGHT):
                 self.do_swipe(e.key == pygame.K_RIGHT)
             return
-        if pygame.K_1 <= e.key <= pygame.K_9:
+        if e.key == pygame.K_b:
+            if self.popup and self.gs.baby and self.popup.title == self.gs.baby.name:
+                self.popup = None
+            else:
+                self.baby_menu()
+        elif pygame.K_1 <= e.key <= pygame.K_9:
             self.choose(e.key - pygame.K_1)
         elif e.key in (pygame.K_e, pygame.K_RETURN, pygame.K_SPACE):
             popup = self.active_popup()
@@ -601,72 +793,74 @@ class App:
     def phone_buttons(self):
         P = self.PHONE
         btns = {
-            "tab_swipe": Button((P.x + 20, P.y + 50, 155, 36), "Swipe", color=(60, 50, 75)),
-            "tab_matches": Button((P.x + 185, P.y + 50, 155, 36), "Matches", color=(60, 50, 75)),
+            "tab_swipe": Button((P.x + 20, P.y + 52, 155, 34), "Swipe", color=(70, 60, 88)),
+            "tab_matches": Button((P.x + 185, P.y + 52, 155, 34), "Matches", color=(70, 60, 88)),
         }
         if self.phone_tab == "swipe":
             label = {"everyone": "Everyone", "vagina": "Women", "penis": "Men"}[self.gs.show_me]
-            btns["filter"] = Button((P.x + 20, P.y + 96, 320, 30), f"Show me: {label}", color=(50, 44, 62))
-            btns["nope"] = Button((P.x + 30, P.bottom - 70, 130, 52), "Nope", color=(120, 45, 45))
-            btns["like"] = Button((P.right - 160, P.bottom - 70, 130, 52), "Like", color=(40, 110, 70))
+            btns["filter"] = Button((P.x + 20, P.y + 94, 320, 28), f"Show me: {label}", color=(60, 52, 76))
+            btns["nope"] = Button((P.x + 30, P.bottom - 70, 130, 50), "Nope", color=(170, 60, 70))
+            btns["like"] = Button((P.right - 160, P.bottom - 70, 130, 50), "Like", color=(60, 160, 100))
         else:
             for i, p in enumerate(reversed(self.gs.matches)):
-                btns[("text", i)] = Button((P.right - 110, P.y + 106 + i * 58, 90, 44), "Text",
-                                           color=(120, 50, 85))
+                btns[("text", i)] = Button((P.right - 104, P.y + 104 + i * 60, 84, 42), "Text", color=(160, 60, 105))
         return btns
 
     def draw_phone(self, mouse):
-        s, f, gs, P = self.screen, self.fonts, self.gs, self.PHONE
-        pygame.draw.rect(s, (12, 10, 16), P.inflate(16, 16), border_radius=36)
-        pygame.draw.rect(s, (250, 245, 250), P, border_radius=28)
-        t = f["md"].render("Spark", True, ACCENT)
-        s.blit(t, t.get_rect(center=(P.centerx, P.y + 26)))
+        s, gs, P = self.screen, self.gs, self.PHONE
+        scenery.alpha_rect(s, (0, 0, 0, 90), P.inflate(24, 24).move(0, 8), 40)
+        scenery.grad(s, P.inflate(16, 16), (40, 36, 46), (14, 12, 18), 38)
+        scenery.grad(s, P, (252, 246, 250), (238, 230, 240), 30)
+        t = F(22).render("Spark", True, ACCENT)
+        s.blit(t, t.get_rect(center=(P.centerx, P.y + 28)))
         btns = self.phone_buttons()
         for k, b in btns.items():
             if isinstance(k, str):
-                b.draw(s, f, mouse, selected=k == f"tab_{self.phone_tab}")
+                b.draw(s, mouse, selected=k == f"tab_{self.phone_tab}")
         dark, soft = (40, 30, 50), (130, 110, 140)
         if self.phone_tab == "swipe":
             left = SWIPES_PER_DAY - gs.swipes_today
             if left <= 0:
-                msg = f["md"].render("No swipes left today", True, soft)
+                msg = F(20).render("No swipes left today", True, soft)
                 s.blit(msg, msg.get_rect(center=P.center))
                 return
             if self.card is None:
                 self.card = actions.new_profile(gs)
             p = self.card
-            card = pygame.Rect(P.x + 30, P.y + 136, 300, 360).move(self.drag_x, 0)
-            pygame.draw.rect(s, (255, 255, 255), card, border_radius=18)
-            pygame.draw.rect(s, (220, 200, 220), card, 2, border_radius=18)
-            photo = pygame.Rect(card.x + 14, card.y + 14, card.w - 28, 200)
-            pygame.draw.rect(s, (230, 190, 210), photo, border_radius=12)
+            card = pygame.Rect(P.x + 30, P.y + 134, 300, 362).move(self.drag_x, 0)
+            scenery.alpha_rect(s, (0, 0, 0, 40), card.move(0, 6), 20)
+            pygame.draw.rect(s, (255, 255, 255), card, border_radius=20)
+            photo = pygame.Rect(card.x + 12, card.y + 12, card.w - 24, 206)
+            scenery.grad(s, photo, (255, 210, 225), (220, 170, 210), 14)
             s.set_clip(photo)
-            draw_person(s, (photo.centerx, photo.centery + 40), p.skin, p.hair, 2.6, self.ticks, 0,
-                        (200, 60, 90))
+            draw_character(s, p.look, (photo.centerx, photo.bottom + 26), 0.68, ticks=self.ticks, shadow=False)
             s.set_clip(None)
-            s.blit(f["lg"].render(f"{p.name}, {p.age}", True, dark), (card.x + 18, photo.bottom + 10))
-            s.blit(f["sm"].render(f"{p.label} · {p.vibe}", True, soft), (card.x + 18, photo.bottom + 44))
-            for i, line in enumerate(wrap(f"\"{p.bio}\"", f["sm"], card.w - 36)):
-                s.blit(f["sm"].render(line, True, dark), (card.x + 18, photo.bottom + 72 + i * 22))
+            s.blit(F(26).render(f"{p.name}, {p.age}", True, dark), (card.x + 18, photo.bottom + 10))
+            s.blit(F(15, False).render(f"{p.label} · {p.vibe}", True, soft), (card.x + 18, photo.bottom + 44))
+            for i, line in enumerate(wrap(f"\"{p.bio}\"", F(15, False), card.w - 36)):
+                s.blit(F(15, False).render(line, True, dark), (card.x + 18, photo.bottom + 70 + i * 20))
             if abs(self.drag_x) > 30:
-                stamp = f["lg"].render("LIKE" if self.drag_x > 0 else "NOPE", True,
-                                       GOOD if self.drag_x > 0 else BAD)
+                stamp = F(30).render("LIKE" if self.drag_x > 0 else "NOPE", True, GOOD if self.drag_x > 0 else BAD)
                 s.blit(stamp, stamp.get_rect(center=(card.centerx, card.y + 40)))
-            hint = f["xs"].render(f"Drag the card or use arrow keys · {left} swipes left", True, soft)
+            hint = F(12, False).render(f"Drag the card or use arrow keys · {left} swipes left", True, soft)
             s.blit(hint, hint.get_rect(center=(P.centerx, P.bottom - 86)))
         else:
             if not gs.matches:
-                msg = f["sm"].render("No matches yet. Get swiping!", True, soft)
+                msg = F(16, False).render("No matches yet. Get swiping!", True, soft)
                 s.blit(msg, msg.get_rect(center=P.center))
             for i, p in enumerate(reversed(gs.matches)):
-                y = P.y + 106 + i * 58
-                draw_person(s, (P.x + 44, y + 36), p.skin, p.hair, 0.9, 0, 0, (200, 60, 90))
-                s.blit(f["md"].render(f"{p.name}, {p.age}", True, dark), (P.x + 76, y + 4))
+                y = P.y + 104 + i * 60
+                clip = pygame.Rect(P.x + 18, y, 50, 50)
+                pygame.draw.ellipse(s, (240, 215, 230), clip)
+                s.set_clip(clip)
+                draw_character(s, p.look, (clip.centerx, clip.bottom + 52), 0.3, shadow=False, bob=False)
+                s.set_clip(None)
+                s.blit(F(18).render(f"{p.name}, {p.age}", True, dark), (P.x + 78, y + 6))
                 extra = f" · together {p.times}x" if p.times else ""
-                s.blit(f["xs"].render(p.vibe + extra, True, soft), (P.x + 76, y + 26))
+                s.blit(F(13, False).render(p.vibe + extra, True, soft), (P.x + 78, y + 28))
             for k, b in btns.items():
                 if isinstance(k, tuple):
-                    b.draw(s, f, mouse)
+                    b.draw(s, mouse)
 
     def click_phone(self, pos):
         if not self.PHONE.collidepoint(pos):
@@ -690,7 +884,7 @@ class App:
                 actions.text_match(self.gs, p)
                 self.phone_open = False
             return
-        card = pygame.Rect(self.PHONE.x + 30, self.PHONE.y + 136, 300, 360)
+        card = pygame.Rect(self.PHONE.x + 30, self.PHONE.y + 134, 300, 362)
         if self.phone_tab == "swipe" and card.collidepoint(pos):
             self.drag_start = pos[0]
 
@@ -706,24 +900,27 @@ class App:
 
     # ================================================================= over
     def draw_over(self, mouse):
-        gs, f = self.gs, self.fonts
-        t = f["xl"].render("Game over", True, ACCENT)
-        self.screen.blit(t, t.get_rect(center=(W // 2, 90)))
-        r = f["md"].render(gs.end_reason, True, TEXT)
-        self.screen.blit(r, r.get_rect(center=(W // 2, 145)))
-        draw_character(self.screen, gs.character, (W // 2, 310), 0.9, gs.mood, gs.energy,
-                       gs.hygiene, gs.infection is not None, self.ticks, gs.piercings)
+        gs = self.gs
+        self.backdrop()
+        t = F(52).render("Game over", True, ACCENT)
+        self.screen.blit(t, t.get_rect(center=(W // 2, 70)))
+        r = F(20, False).render(gs.end_reason, True, TEXT)
+        self.screen.blit(r, r.get_rect(center=(W // 2, 118)))
+        draw_character(self.screen, gs.character, (W // 2 - (40 if gs.baby else 0), 420), 0.8, gs.mood, gs.energy,
+                       gs.hygiene, gs.infection is not None, self.ticks, gs.piercings, gs.belly_stage)
+        if gs.baby:
+            draw_baby(self.screen, gs.baby, (W // 2 + 90, 420), 1.0, self.ticks)
         lines = [
             f"Days lived: {min(gs.day, GAME_LENGTH_DAYS)}",
             f"Hookups: {gs.total_hookups}  (with condom: {gs.protected_hookups})",
             f"Infections caught: {gs.infections_caught}   Piercings: {len(gs.piercings)}",
-            f"Money left: ${gs.money}",
+            f"Baby: {gs.baby.name}" if gs.baby else "No kids (yet)",
             f"SCORE: {gs.score()}",
         ]
         for i, line in enumerate(lines):
-            s = f["md"].render(line, True, TEXT if i < 4 else GOOD)
-            self.screen.blit(s, s.get_rect(center=(W // 2, 470 + i * 32)))
-        Button((W // 2 - 100, 640, 200, 52), "Play again").draw(self.screen, f, mouse)
+            surf = F(19, i == 4).render(line, True, TEXT if i < 4 else GOOD)
+            self.screen.blit(surf, surf.get_rect(center=(W // 2, 470 + i * 30)))
+        Button((W // 2 - 100, 640, 200, 52), "Play again", color=(150, 55, 100)).draw(self.screen, mouse)
 
     def click_over(self, pos):
         if pygame.Rect(W // 2 - 100, 640, 200, 52).collidepoint(pos):
@@ -733,23 +930,24 @@ class App:
     # ================================================================= misc
     def show_toast(self, msg, color=BAD):
         self.toast, self.toast_color = msg, color
-        self.toast_until = pygame.time.get_ticks() + 2500
+        self.toast_until = pygame.time.get_ticks() + 2600
 
     def draw_toast(self):
         if pygame.time.get_ticks() > self.toast_until:
             return
-        s = self.fonts["md"].render(self.toast, True, TEXT)
-        r = s.get_rect(center=(W // 2, 110))
-        pygame.draw.rect(self.screen, self.toast_color, r.inflate(30, 16), border_radius=10)
-        self.screen.blit(s, r)
+        t = F(18).render(self.toast, True, (255, 255, 255))
+        r = t.get_rect(center=(W // 2, 112))
+        scenery.alpha_rect(self.screen, (0, 0, 0, 80), r.inflate(34, 20).move(0, 3), 12)
+        scenery.grad(self.screen, r.inflate(34, 20), shade(self.toast_color, 1.1), shade(self.toast_color, 0.85), 12)
+        self.screen.blit(t, r)
 
     def drag_active(self):
         return self.scene == "world" and self.phone_open and self.drag_start is not None
 
-    def frame(self, events, dt=1 / 60):
+    def frame(self, events_, dt=1 / 60):
         self.ticks = pygame.time.get_ticks()
         mouse = pygame.mouse.get_pos()
-        for e in events:
+        for e in events_:
             if e.type == pygame.QUIT:
                 self.running = False
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
@@ -764,6 +962,7 @@ class App:
                 getattr(self, f"key_{self.scene}")(e)
         if self.scene == "world":
             self.move(dt)
+            self.after_action()
         self.screen.fill(BG)
         getattr(self, f"draw_{self.scene}")(mouse)
         self.draw_toast()

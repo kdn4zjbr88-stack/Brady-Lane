@@ -42,23 +42,70 @@ def test_unprotected_with_risky_partner_infects_and_clinic_cures():
     assert gs.infection is None
 
 
-def test_pregnancy_is_hidden_then_shows_then_ends_game():
-    gs = new_game()
-    gs.rng.random = lambda: 0.0  # every roll hits
-    actions.hook_up(gs, partner(), "inside")
-    assert gs.conception is not None and not gs.symptoms()
+def live_days(gs, until):
     gs.money = 10_000
-    while not any("late" in x for x in gs.symptoms()):
+    gs.formula = 99
+    while not until() and not gs.game_over:
         actions.eat(gs)
         actions.shower(gs)
+        if gs.baby:
+            actions.feed_baby(gs)
+            actions.cuddle_baby(gs)
         actions.sleep(gs)
-    actions.pregnancy_test(gs)
-    assert gs.conception.revealed
-    while not gs.game_over:
-        actions.eat(gs)
-        actions.shower(gs)
-        actions.sleep(gs)
-    assert "Baby" in gs.end_reason
+
+
+def test_pregnancy_shows_then_labor_then_baby():
+    gs = new_game(kind="vagina")
+    gs.rng.random = lambda: 0.0  # every roll hits
+    actions.hook_up(gs, partner("penis"), "inside")
+    assert gs.conception is not None and gs.belly_stage == 0
+    assert not any("regnant" in x for x in gs.symptoms())
+    live_days(gs, lambda: gs.visibly_pregnant)
+    assert gs.belly_stage >= 1 and any("Pregnant" in x for x in gs.symptoms())
+    live_days(gs, lambda: gs.in_labor)
+    assert gs.in_labor and not gs.game_over
+    assert actions.deliver_at_clinic(gs) is None
+    assert gs.baby is not None and gs.baby_needs_setup and gs.conception is None
+
+
+def test_cravings_are_satisfied_at_diner():
+    gs = new_game(kind="vagina")
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("penis"), "inside")
+    live_days(gs, lambda: gs.craving is not None)
+    assert gs.craving
+    actions.satisfy_craving(gs)
+    assert gs.craving is None
+
+
+def test_missed_labor_still_delivers():
+    gs = new_game()
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("vagina"), "inside")
+    live_days(gs, lambda: gs.baby is not None)
+    assert gs.baby is not None and not gs.in_labor
+
+
+def test_baby_needs_care_and_crib():
+    gs = new_game()
+    actions.deliver(gs)
+    b = gs.baby
+    b.fullness = b.happiness = 10
+    gs.advance()
+    assert b.crying
+    assert actions.feed_baby(gs) is None and actions.cuddle_baby(gs) is None
+    assert not b.crying
+    actions.crib_baby(gs)
+    assert b.in_crib and not gs.baby_with_you
+    assert actions.feed_baby(gs) is not None
+
+
+def test_no_drinking_while_pregnant():
+    gs = new_game(kind="vagina")
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("penis"), "inside")
+    live_days(gs, lambda: gs.visibly_pregnant)
+    assert actions.drink(gs) is not None
 
 
 def test_no_pregnancy_with_same_anatomy():
@@ -125,3 +172,37 @@ def test_surviving_all_days_ends_game():
         actions.shower(gs)
         actions.sleep(gs)
     assert "survived" in gs.end_reason
+
+
+def test_events_and_flash_sale():
+    from brady import events
+    gs = new_game()
+    assert actions.piercing_price(gs, "Lip") == 60
+    events.spawn(gs, "flashsale")
+    assert actions.piercing_price(gs, "Lip") == 30
+    ev = events.spawn(gs, "wallet", 700, 920)
+    turn_in = events.options(gs, ev)[0]
+    turn_in.fn(gs)
+    assert ev not in gs.events and gs.money == 170
+
+
+def test_events_spawn_over_time():
+    gs = new_game(seed=3)
+    gs.money = 10_000
+    seen = set()
+    for _ in range(40):
+        actions.shower(gs)
+        seen |= {e.key for e in gs.events}
+        actions.eat(gs)
+    assert len(seen) >= 3
+
+
+def test_npc_dialogue():
+    from brady import npcs
+    gs = new_game()
+    granny = npcs.NPC_BY_KEY["granny"]
+    line = npcs.pick_line(gs, granny)
+    npcs.respond(gs, granny, line, line.replies[1])
+    assert gs.talks["granny"] == 1 and "Granny" in gs.log[-1]
+    gs.hygiene = 10
+    assert "smell" in npcs.pick_line(gs, npcs.NPC_BY_KEY["officer"]).text

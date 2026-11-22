@@ -4,6 +4,8 @@ A cheeky adults-only life sim set in the town of **Genitopia**. Pick your charac
 
 ## Run
 
+**Easiest (any computer):** double-click `Play Brady.html`. It opens in your web browser; no install needed, just an internet connection. Click once inside the game if it doesn't start.
+
 **Mac, easiest:** double-click `Play Brady.command`. The first time, macOS may block it: right-click it, choose **Open**, then **Open** again.
 
 **Any computer, from a terminal:**
@@ -62,6 +64,10 @@ python -m pytest
 ```
 
 ## Play in a browser
+
+To rebuild the single-file version after changing the game: `python -m pygbag --build .` then `python tools/make_single_html.py`.
+
+Or serve the build folder:
 
 ```bash
 pip install pygbag

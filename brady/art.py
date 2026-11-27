@@ -185,6 +185,17 @@ def _accessory(pen, kind, top, hair):
         for x, y, r in ((-22, -24, 20), (0, -32, 24), (22, -24, 20)):
             pen.blob((250, 250, 250), x, top + y, r * 2, r * 2, steps=8, dark=0.85, light=1.0)
         pen.rrect((240, 240, 240), 0, top - 2, 70, 16, 4)
+    elif kind == "hardhat":
+        pen.blob((245, 200, 50), 0, top - 8, 96, 54, steps=10, light=1.25)
+        pen.ellipse((215, 170, 35), 0, top + 12, 112, 14)
+        pen.rrect((255, 225, 90), 0, top - 20, 10, 30, 4)
+    elif kind == "headband":
+        pen.rrect((240, 80, 130), 0, top + 18, 120, 14, 7)
+        pen.rrect((255, 255, 255), 0, top + 18, 120, 3, 2)
+    elif kind == "redcap":
+        pen.blob((200, 45, 55), 0, top - 6, 92, 50, steps=10)
+        pen.ellipse((160, 30, 40), 18, top + 14, 76, 14)
+        pen.blob((250, 250, 250), 0, top - 10, 18, 16, steps=4)
     elif kind == "bow":
         for side in (-1, 1):
             pen.blob((240, 110, 160), side * 14, top, 26, 20, steps=6)

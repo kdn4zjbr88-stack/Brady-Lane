@@ -47,6 +47,8 @@ def eat(gs: GameState) -> str | None:
 
 
 def snack(gs: GameState) -> str | None:
+    if gs.utilities_off:
+        return "The fridge is dead. Pay your power bill."
     if gs.money < SNACK_PRICE:
         return f"Groceries cost ${SNACK_PRICE}."
     gs.money -= SNACK_PRICE
@@ -56,9 +58,15 @@ def snack(gs: GameState) -> str | None:
 
 
 def shower(gs: GameState) -> str | None:
+    if gs.utilities_off:
+        return "No water! Pay your power & water bill."
     gs.hygiene = 100
-    gs.adjust(mood=6)
-    gs.say("Fresh and clean! Squeaky.")
+    if "shower" in gs.upgrades:
+        gs.adjust(mood=14, energy=5)
+        gs.say("The rain shower is heavenly. You stand there for 40 minutes.")
+    else:
+        gs.adjust(mood=6)
+        gs.say("Fresh and clean! Squeaky.")
     gs.advance()
     return None
 
@@ -84,21 +92,17 @@ def sleep(gs: GameState) -> str | None:
     if gs.game_over:
         return None
     gs.energy = 100
-    gs.adjust(health=8, mood=5, fullness=10)
+    if "bed" in gs.upgrades:
+        gs.adjust(health=15, mood=12, fullness=10)
+    else:
+        gs.adjust(health=8, mood=5, fullness=10)
     gs.say(f"You slept like a baby. Good morning, day {gs.day}!")
     return None
 
 
 def work(gs: GameState) -> str | None:
-    if gs.time_name == "Night":
-        return "The office is closed at night."
-    if gs.energy < 20:
-        return "Too tired to work."
-    gs.money += WORK_PAY
-    gs.adjust(energy=-18, mood=-6, hygiene=-8)
-    gs.say(f"You put in a shift and earned ${WORK_PAY}.")
-    gs.advance()
-    return None
+    from .jobs import work as job_work
+    return job_work(gs)
 
 
 # ---- club -----------------------------------------------------------------
@@ -140,6 +144,7 @@ def go_home_with(gs: GameState, p: Partner) -> str | None:
     if p not in gs.matches:
         return "Get to know them first."
     gs.date = p
+    gs.date_place = "apartments"
     gs.say(f"{p.name} grabs your hand: \"My place is right around the corner.\"")
     return None
 
@@ -169,6 +174,7 @@ def text_match(gs: GameState, p: Partner) -> str | None:
         gs.say(f"{p.name}: \"busy rn, text me tonight ;)\"")
         return None
     gs.date = p
+    gs.date_place = "apartments"
     gs.say(f"{p.name}: \"come over. Apartments, unit 4. door's open.\"")
     return None
 
@@ -203,10 +209,14 @@ def hook_up(gs: GameState, p: Partner, method: str) -> str | None:
     if gs.infection is None and gs.rng.random() < p.sti_risk * STI_FACTOR[method]:
         gs._infect(gs.rng.choice(["Chlamydia", "Gonorrhea", "Herpes flare-up", "Trichomoniasis"]))
 
-    if can_conceive(gs, p) and gs.conception is None and gs.rng.random() < PREGNANCY_RISK[method]:
+    from .cycle import fertility
+    risk = PREGNANCY_RISK[method] * (fertility(gs) if gs.is_carrier else 1.0)
+    if can_conceive(gs, p) and gs.conception is None and gs.rng.random() < risk:
         gs.conception = Conception(day=gs.day, partner=p.name)  # hidden!
 
     gs.date = None
+    from . import npcs
+    npcs.after_hookup(gs, p)
     gs.advance()
     return None
 
@@ -268,7 +278,9 @@ def clinic(gs: GameState) -> str | None:
 
 def piercing_price(gs: GameState, name: str) -> int:
     price = PIERCINGS[name][0]
-    return price // 2 if events.active(gs, "flashsale") else price
+    if events.active(gs, "flashsale") or gs.job == "apprentice":
+        price //= 2
+    return price
 
 
 def get_piercing(gs: GameState, name: str) -> str | None:
@@ -388,4 +400,27 @@ def crib_baby(gs: GameState) -> str | None:
         return "You don't have a baby."
     b.in_crib = not b.in_crib
     gs.say(f"You tuck {b.name} into the crib." if b.in_crib else f"You scoop {b.name} up. Off we go!")
+    return None
+
+
+# ---- period supplies --------------------------------------------------------
+SUPPLIES_PRICE = 10
+PAINKILLER_PRICE = 8
+
+
+def buy_supplies(gs: GameState) -> str | None:
+    if gs.money < SUPPLIES_PRICE:
+        return f"Pads & tampons are ${SUPPLIES_PRICE}."
+    gs.money -= SUPPLIES_PRICE
+    gs.period_supplies += 6
+    gs.say("Bought a box of pads & tampons (6).")
+    return None
+
+
+def buy_painkillers(gs: GameState) -> str | None:
+    if gs.money < PAINKILLER_PRICE:
+        return f"Painkillers are ${PAINKILLER_PRICE}."
+    gs.money -= PAINKILLER_PRICE
+    gs.painkillers += 3
+    gs.say("Bought painkillers (3). Cramps, beware.")
     return None

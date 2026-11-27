@@ -42,10 +42,19 @@ def test_unprotected_with_risky_partner_infects_and_clinic_cures():
     assert gs.infection is None
 
 
+def pay_all(gs):
+    from brady import bills
+    for b in gs.bills:
+        if b.due_day - gs.day <= 1:
+            bills.pay(gs, b.key)
+
+
 def live_days(gs, until):
     gs.money = 10_000
     gs.formula = 99
+    gs.period_supplies = 999
     while not until() and not gs.game_over:
+        pay_all(gs)
         actions.eat(gs)
         actions.shower(gs)
         if gs.baby:
@@ -168,6 +177,7 @@ def test_surviving_all_days_ends_game():
     gs = new_game()
     gs.money = 10_000
     while not gs.game_over:
+        pay_all(gs)
         actions.eat(gs)
         actions.shower(gs)
         actions.sleep(gs)
@@ -205,4 +215,141 @@ def test_npc_dialogue():
     npcs.respond(gs, granny, line, line.replies[1])
     assert gs.talks["granny"] == 1 and "Granny" in gs.log[-1]
     gs.hygiene = 10
-    assert "smell" in npcs.pick_line(gs, npcs.NPC_BY_KEY["officer"]).text
+    gs.day = 2                                    # a Tuesday: no weekday chatter first
+    assert "shower" in npcs.pick_line(gs, npcs.NPC_BY_KEY["officer"]).text
+
+
+# ---- jobs, bills, cycle, upgrades, baseball, romance ---------------------------------
+def test_jobs_apply_work_and_raise():
+    from brady import jobs
+    gs = new_game()
+    assert gs.job == "office"
+    gs.slot = 3
+    assert jobs.work(gs) is not None            # office is closed at night
+    gs.mood, gs.hygiene = 0, 0
+    assert jobs.apply(gs, "bartender") is not None and gs.job == "office"   # not charming enough
+    gs.mood = 100
+    gs.hygiene = 100
+    assert jobs.apply(gs, "bartender") is None and gs.job == "bartender"
+    gs.money = 0
+    gs.slot = 2
+    gs.energy = 100
+    assert jobs.work(gs) is None and gs.money >= 40
+    gs.shifts = jobs.RAISE_EVERY
+    assert jobs.pay_for(gs) == 40 + jobs.RAISE
+
+
+def test_bills_late_fees_shutoffs_and_eviction():
+    from brady import bills
+    gs = new_game()
+    gs.money = 0
+    while gs.day < 10 and not gs.game_over:
+        actions.sleep(gs)
+        gs.hygiene = gs.fullness = gs.health = 100
+    assert gs.utilities_off and gs.phone_off
+    assert actions.shower(gs) is not None
+    gs.money = 1000
+    assert bills.pay(gs, "utilities") is None and not gs.utilities_off
+    rent = next(b for b in gs.bills if b.key == "rent")
+    assert rent.late
+    while not gs.game_over:
+        actions.sleep(gs)
+        gs.hygiene = gs.fullness = gs.health = 100
+    assert "Evicted" in gs.end_reason
+
+
+def test_menstrual_cycle_period_supplies_and_fertility():
+    from brady import cycle
+    gs = new_game(kind="vagina")
+    gs.cycle_day = cycle.CYCLE_LEN          # tomorrow the period starts
+    gs.period_supplies = 0
+    actions.sleep(gs)
+    assert cycle.phase(gs) == "period"
+    hyg = gs.hygiene
+    gs.advance()
+    assert gs.leaked_today and gs.hygiene < hyg
+    assert actions.buy_supplies(gs) is None and gs.period_supplies == 6
+    gs.cycle_day = 5
+    assert cycle.fertility(gs) > 1 and cycle.charm_bonus(gs) > 0
+    gs.conception = __import__("brady.model", fromlist=["Conception"]).Conception(gs.day, "X")
+    assert cycle.phase(gs) is None            # pregnancy pauses the cycle
+
+
+def test_penis_character_has_no_cycle():
+    from brady import cycle
+    gs = new_game()
+    assert cycle.phase(gs) is None
+
+
+def test_house_upgrades():
+    from brady import upgrades
+    gs = new_game()
+    gs.money = 2000
+    assert upgrades.cook(gs) is None or "kitchen" not in gs.upgrades
+    assert upgrades.buy(gs, "hottub") is None and "hottub" in gs.upgrades
+    assert upgrades.buy(gs, "hottub") is not None
+    util = next(b for b in gs.bills if b.key == "utilities")
+    assert util.amount(gs) > util.base
+    upgrades.buy(gs, "gym")
+    gs.energy = 100
+    upgrades.workout(gs)
+    gs.hygiene, gs.mood = 100, 50
+    assert gs.fitness == 2
+
+
+def test_baseball_schedule_sim_and_batting():
+    from brady import baseball
+    gs = new_game()
+    gs.money = 10_000
+    while gs.day < 4:
+        actions.eat(gs)
+    assert gs.team_wins + gs.team_losses == 1 and gs.last_game      # day 3 game simulated
+    ab = baseball.AtBat("game")
+    ab.new_pitch(gs.rng)
+    ab.is_strike = True
+    assert baseball.judge_swing(ab, baseball.SWEET) == "homer"
+    assert baseball.judge_swing(ab, 0.2) == "miss"
+    for _ in range(4):
+        baseball.resolve(ab, "homer")
+    assert ab.done
+    gs.day, gs.slot, gs.played_today = 6, 2, False
+    baseball.finish(gs, ab)
+    assert gs.team_wins + gs.team_losses == 2 and gs.fame > 0
+
+
+def test_romance_flirt_date_invite_and_decline():
+    from brady import npcs
+    gs = new_game()
+    gs.money = 1000
+    gs.rng.random = lambda: 0.0
+    coach = npcs.NPC_BY_KEY["coach"]
+    npcs.flirt(gs, coach)
+    assert npcs.affection(gs, coach) == 10
+    assert npcs.flirt(gs, coach) is not None       # once a day
+    assert npcs.go_on_date(gs, coach) is not None  # not enough affection yet
+    gs.affection["coach"] = 70
+    assert npcs.go_on_date(gs, coach) is None and npcs.affection(gs, coach) == 85
+    gs.slot = 2
+    assert npcs.invite_home(gs, coach) is None and gs.date.name == "Coach Rod" and gs.date_place == "home"
+    assert coach not in npcs.npcs_in("ballpark", gs)
+    actions.hook_up(gs, gs.date, "condom")
+    assert npcs.affection(gs, coach) == 95 and gs.date is None
+    granny = npcs.NPC_BY_KEY["granny"]
+    gs.affection["granny"] = 90
+    assert npcs.go_on_date(gs, granny) is None and npcs.affection(gs, granny) == 90
+
+
+def test_dialogue_changes_day_to_day():
+    from brady import npcs
+    gs = new_game()
+    mayor = npcs.NPC_BY_KEY["mayor"]
+    seen = set()
+    for d in range(1, 15):
+        gs.day = d
+        gs.talked_today = set()
+        seen.add(npcs.say(npcs.pick_line(gs, mayor).text, gs))
+    assert len(seen) >= 6
+    gs.raining = True
+    gs.talked_today = set()
+    gs.day = 2
+    assert "rain" in npcs.pick_line(gs, mayor).text

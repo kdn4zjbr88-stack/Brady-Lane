@@ -5,6 +5,7 @@ import random
 from dataclasses import dataclass, field
 
 TOWN_NAME = "Genitopia"
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 TIME_SLOTS = ["Morning", "Afternoon", "Evening", "Night"]
 GAME_LENGTH_DAYS = 30
 PREGNANCY_SHOWS_AFTER = 4     # days until symptoms show up
@@ -174,6 +175,25 @@ class GameState:
     swipes_today: int = 0
     show_me: str = "everyone"              # dating app filter: penis / vagina / everyone
 
+    job: str | None = "office"
+    shifts: int = 0
+    bills: list = field(default_factory=list)    # bills.Bill, created in __post_init__
+    utilities_off: bool = False
+    phone_off: bool = False
+    upgrades: list[str] = field(default_factory=list)
+    fitness: int = 0
+    fame: int = 0
+    team_wins: int = 0
+    team_losses: int = 0
+    last_game: str = ""
+    played_today: bool = False
+    cycle_day: int = 1
+    period_supplies: int = 4
+    painkillers: int = 0
+    leaked_today: bool = False
+    affection: dict = field(default_factory=dict)  # npc key -> 0..100
+    date_place: str = "apartments"               # where your date is waiting: apartments / home
+    talked_today: set = field(default_factory=set)
     events: list = field(default_factory=list)   # active TownEvents (see events.py)
     raining: bool = False
     talks: dict = field(default_factory=dict)    # npc key -> times talked
@@ -185,7 +205,17 @@ class GameState:
     game_over: bool = False
     end_reason: str = ""
 
+    def __post_init__(self):
+        from .bills import starting_bills
+        if not self.bills:
+            self.bills = starting_bills()
+        self.cycle_day = self.rng.randint(1, 10)
+
     # ---- helpers -------------------------------------------------------
+    @property
+    def weekday(self) -> str:
+        return WEEKDAYS[(self.day - 1) % 7]
+
     @property
     def time_name(self) -> str:
         return TIME_SLOTS[self.slot]
@@ -221,7 +251,9 @@ class GameState:
 
     @property
     def charm(self) -> int:
+        from .cycle import charm_bonus
         c = 20 + sum(PIERCINGS[p][1] for p in self.piercings) + self.mood / 5
+        c += self.fitness + self.fame // 2 + charm_bonus(self)
         if self.hygiene >= 60:
             c += 10
         elif self.hygiene < 30:
@@ -254,6 +286,13 @@ class GameState:
             out.append(f"{who}: {self.craving}")
         if self.piercing_heal:
             out.append("New piercing healing")
+        from .cycle import phase
+        if phase(self) == "period":
+            out.append("On your period" + ("" if self.period_supplies else " (no supplies!)"))
+        if self.utilities_off:
+            out.append("Power & water off")
+        if self.phone_off:
+            out.append("Phone cut off")
         if self.baby and self.baby.crying:
             out.append(f"{self.baby.name} is crying!")
         return out
@@ -267,6 +306,9 @@ class GameState:
                 return
             self._tick()
             self.slot += 1
+            if self.slot == 3:
+                from .baseball import simulate_if_missed
+                simulate_if_missed(self)
             if self.slot >= len(TIME_SLOTS):
                 self.slot = 0
                 self._new_day()
@@ -304,6 +346,8 @@ class GameState:
             elif roll < 0.18:
                 self.adjust(energy=-8, mood=-3)
                 self.say("Your back aches and your feet are swollen. Pregnancy is a lot.")
+        from .cycle import tick as cycle_tick
+        cycle_tick(self)
         self._tick_baby()
         self._check_end()
 
@@ -312,7 +356,8 @@ class GameState:
         if not b:
             return
         b.fullness = clamp(b.fullness - 7)
-        b.happiness = clamp(b.happiness - (2 if not b.in_crib else 6))
+        crib_loss = 2 if "nursery" in self.upgrades else 6
+        b.happiness = clamp(b.happiness - (2 if not b.in_crib else crib_loss))
         was_crying = b.crying
         b.crying = b.fullness < 25 or b.happiness < 25
         if b.crying:
@@ -325,6 +370,11 @@ class GameState:
         self.day += 1
         self.swipes_today = 0
         self.date = None  # dates don't wait overnight
+        self.played_today = False
+        self.talked_today = set()
+        from . import bills, cycle
+        cycle.new_day(self)
+        bills.new_day(self)
         self._pregnancy_day()
         self._check_end()
         if not self.game_over and self.day > GAME_LENGTH_DAYS:
@@ -384,4 +434,5 @@ class GameState:
         days = min(self.day, GAME_LENGTH_DAYS)
         baby = (self.baby.happiness + self.baby.fullness) / 2 if self.baby else 0
         return int(days * 10 + self.mood + self.health + self.money / 5 + self.charm + baby
+                   + len(self.upgrades) * 20 + self.team_wins * 10
                    + self.protected_hookups * 15 - self.infections_caught * 40)

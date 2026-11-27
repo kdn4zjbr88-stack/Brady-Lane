@@ -12,6 +12,14 @@ class Furniture:
     kind: str               # picks the painter in scenery.py
     solid: bool = True
     occlude: bool = False   # drawn in front of characters standing behind it
+    upgrade: str = ""       # tied to a house upgrade...
+    alt: str = ""           # ...if set, this kind is used once owned; if empty, it only exists once owned
+
+    def present(self, upgrades) -> bool:
+        return not self.upgrade or self.alt or self.upgrade in upgrades
+
+    def kind_for(self, upgrades) -> str:
+        return self.alt if self.upgrade and self.alt and self.upgrade in upgrades else self.kind
 
 
 @dataclass
@@ -20,6 +28,7 @@ class Hotspot:
     zone: Rect        # standing inside this triggers the pop-up
     title: str
     npc: str = ""     # shopkeeper attached to this spot (adds a "Chat" option)
+    upgrade: str = "" # only exists once this house upgrade is owned
 
 
 @dataclass
@@ -66,18 +75,22 @@ class Room:
     furniture: list[Furniture] = field(default_factory=list)
     hotspots: list[Hotspot] = field(default_factory=list)
 
-    def solids(self) -> list[Rect]:
-        return [f.rect for f in self.furniture if f.solid]
+    def solids(self, upgrades=()) -> list[Rect]:
+        return [f.rect for f in self.furniture if f.solid and f.present(upgrades)]
+
+    def spots(self, upgrades=()) -> list[Hotspot]:
+        return [h for h in self.hotspots if not h.upgrade or h.upgrade in upgrades]
 
 
-def _spot(key, rect, title, pad=55, npc=""):
-    return Hotspot(key, rect.inflate(pad * 2, pad * 2), title, npc)
+def _spot(key, rect, title, pad=55, npc="", upgrade=""):
+    return Hotspot(key, rect.inflate(pad * 2, pad * 2), title, npc, upgrade)
 
 
 # ---- town -------------------------------------------------------------------
-TOWN_SIZE = (2600, 1700)
-ROADS = [Rect(0, 760, 2600, 120), Rect(1240, 0, 120, 1700)]
-SIDEWALKS = [Rect(0, 732, 2600, 28), Rect(0, 880, 2600, 28), Rect(1212, 0, 28, 1700), Rect(1360, 0, 28, 1700)]
+TOWN_SIZE = (2600, 2500)
+ROADS = [Rect(0, 760, 2600, 120), Rect(0, 1640, 2600, 120), Rect(1240, 0, 120, 2500)]
+SIDEWALKS = [Rect(0, 732, 2600, 28), Rect(0, 880, 2600, 28), Rect(0, 1612, 2600, 28), Rect(0, 1760, 2600, 28),
+             Rect(1212, 0, 28, 2500), Rect(1360, 0, 28, 2500)]
 
 BUILDINGS = [
     Building("home", "Home", Rect(200, 300, 360, 320), (200, 170, 140), (120, 70, 60), "bottom"),
@@ -91,17 +104,23 @@ BUILDINGS = [
              (30, 30, 30)),
     Building("clinic", "Genitopia General", Rect(1500, 1000, 340, 300), (238, 242, 248), (60, 120, 200), "top"),
     Building("apartments", "Apartments", Rect(1980, 1000, 420, 400), (180, 120, 95), (95, 60, 50), "top"),
+    Building("ballpark", "Ballers Stadium", Rect(420, 1880, 700, 520), (205, 200, 190), (40, 90, 160), "top"),
+    Building("hardware", "Screw & Nail", Rect(1880, 1880, 380, 280), (190, 160, 120), (210, 110, 40), "top",
+             (230, 120, 40)),
 ]
 BUILDING_BY_KEY = {b.key: b for b in BUILDINGS}
 
 TREES = [(120, 120), (640, 160), (1120, 220), (1980, 140), (2480, 260), (1140, 620), (2480, 640),
          (120, 1500), (700, 1460), (1150, 1120), (1420, 1560), (1920, 1580), (2520, 1580),
-         (1110, 1600), (980, 120), (2440, 1250)]
+         (1110, 1580), (980, 120), (2440, 1250), (200, 2000), (220, 2380), (1600, 1980), (1640, 2380),
+         (2460, 1960), (2440, 2380), (1180, 2300)]
 FOUNTAIN = (1660, 1500, 70)       # x, y, radius
 BENCHES = [(1560, 1430), (1760, 1430), (640, 922)]
-LAMPS = [(x, 730) for x in range(160, 2600, 320)] + [(x, 910) for x in range(320, 2600, 320)]
+LAMPS = ([(x, 730) for x in range(160, 2600, 320)] + [(x, 910) for x in range(320, 2600, 320)]
+         + [(x, 1610) for x in range(160, 2600, 320)] + [(x, 1790) for x in range(320, 2600, 320)])
 FLOWERBEDS = [Rect(220, 630, 90, 22), Rect(450, 630, 90, 22), Rect(2040, 630, 80, 22),
-              Rect(2220, 630, 80, 22), Rect(1520, 972, 90, 22), Rect(1730, 972, 90, 22)]
+              Rect(2220, 630, 80, 22), Rect(1520, 972, 90, 22), Rect(1730, 972, 90, 22),
+              Rect(1900, 1852, 90, 22), Rect(2150, 1852, 90, 22)]
 WELCOME_SIGN = Rect(40, 640, 150, 70)
 
 
@@ -120,30 +139,39 @@ def F(x, y, w, h, kind, solid=True, occlude=False):
 
 
 def _home():
-    bed, crib, mirror = Rect(60, 70, 220, 150), Rect(310, 70, 100, 80), Rect(450, 6, 80, 40)
-    fridge, shower, toilet = Rect(60, 470, 90, 130), Rect(800, 40, 160, 150), Rect(880, 280, 70, 70)
-    return Room("home", "Home", (1000, 640), "wood", (215, 200, 180), (500, 560), [
-        F(660, 0, 340, 640, "tilefloor", solid=False),
-        F(320, 280, 260, 160, "rug", solid=False),
-        Furniture(bed, "bed"),
-        Furniture(crib, "crib"),
+    bed, crib, mirror = Rect(60, 80, 240, 160), Rect(330, 80, 110, 84), Rect(480, 6, 80, 40)
+    fridge, kitchen = Rect(60, 590, 90, 130), Rect(150, 640, 180, 80)
+    shower, toilet = Rect(1010, 40, 160, 150), Rect(1090, 310, 70, 70)
+    tv, gym, tub = Rect(440, 250, 200, 36), Rect(60, 330, 180, 130), Rect(870, 500, 280, 200)
+    return Room("home", "Home", (1200, 760), "wood", (215, 200, 180), (600, 690), [
+        F(820, 0, 380, 760, "tilefloor", solid=False),
+        F(360, 330, 320, 190, "rug", solid=False),
+        Furniture(bed, "bed", upgrade="bed", alt="bed_luxe"),
+        Furniture(crib, "crib", upgrade="nursery", alt="crib_nursery"),
         Furniture(mirror, "mirror", solid=False),
         Furniture(fridge, "fridge"),
-        F(150, 520, 150, 80, "kitchen"),
-        F(340, 440, 210, 90, "couch"),
-        F(640, 0, 20, 240, "wall"),
-        F(640, 340, 20, 300, "wall"),
-        Furniture(shower, "shower"),
+        Furniture(kitchen, "kitchen", upgrade="kitchen", alt="kitchen_pro"),
+        F(410, 560, 260, 90, "couch"),
+        Furniture(tv, "tv", upgrade="tv"),
+        Furniture(gym, "gym", upgrade="gym"),
+        F(800, 0, 20, 280, "wall"),
+        F(800, 380, 20, 380, "wall"),
+        Furniture(shower, "shower", upgrade="shower", alt="shower_rain"),
         Furniture(toilet, "toilet"),
-        F(700, 30, 70, 50, "sink"),
-        F(580, 560, 44, 44, "plant"),
+        F(860, 30, 70, 50, "sink"),
+        Furniture(tub, "hottub", upgrade="hottub"),
+        F(730, 690, 44, 44, "plant"),
     ], [
         _spot("sleep", bed, "Your bed"),
         _spot("crib", crib, "Crib", 45),
-        _spot("mirror", Rect(450, 30, 80, 20), "Mirror", 40),
+        _spot("mirror", Rect(480, 30, 80, 20), "Mirror", 40),
         _spot("snack", fridge, "Fridge"),
+        _spot("cook", kitchen, "Chef's kitchen", 45, upgrade="kitchen"),
+        _spot("tv", tv, "Giant TV", 60, upgrade="tv"),
+        _spot("gym", gym, "Home gym", 45, upgrade="gym"),
         _spot("shower", shower, "Bathroom: shower"),
         _spot("pee", toilet, "Bathroom: toilet", 40),
+        _spot("hottub", tub, "Hot tub", 50, upgrade="hottub"),
     ])
 
 
@@ -230,7 +258,35 @@ def _apartment():
     ], [_spot("bed", bed, "Their bed", 70)])
 
 
-ROOMS = {r.key: r for r in (_home(), _club(), _diner(), _office(), _pharmacy(), _clinic(), _studio(), _apartment())}
+def _ballpark():
+    cage, stand = Rect(1120, 560, 220, 230), Rect(60, 600, 240, 90)
+    return Room("ballpark", "Ballers Stadium", (1400, 900), "field", (60, 110, 70), (700, 840), [
+        F(450, 300, 500, 460, "diamond", solid=False),
+        F(60, 70, 1280, 150, "bleachers"),
+        F(560, 4, 280, 56, "scoreboard", solid=False),
+        F(150, 300, 200, 60, "dugout"),
+        Furniture(cage, "cage"),
+        Furniture(stand, "concession", occlude=True),
+    ], [
+        _spot("plate", Rect(670, 700, 60, 30), "Home plate", 50),
+        _spot("cage", cage, "Batting cage", 40),
+        Hotspot("bleachers", Rect(380, 220, 640, 70), "Bleachers"),
+        _spot("concession", stand, "Concessions", 50),
+    ])
+
+
+def _hardware():
+    counter = Rect(150, 150, 500, 56)
+    return Room("hardware", "Screw & Nail", (800, 560), "lino", (230, 215, 190), (400, 450), [
+        Furniture(counter, "counter_orange", occlude=True),
+        F(170, 18, 460, 64, "toolwall", solid=False),
+        F(50, 290, 170, 130, "hottub"),
+        F(580, 300, 170, 110, "bed_luxe"),
+    ], [_spot("hardware", counter, "Screw & Nail", npc="mandy")])
+
+
+ROOMS = {r.key: r for r in (_home(), _club(), _diner(), _office(), _pharmacy(), _clinic(), _studio(), _apartment(),
+                            _ballpark(), _hardware())}
 for _room in ROOMS.values():
     w, h = _room.size
     _room.hotspots.append(Hotspot("exit", Rect(w // 2 - 70, h - 60, 140, 60), "Exit"))

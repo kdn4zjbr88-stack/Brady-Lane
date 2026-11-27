@@ -131,3 +131,88 @@ def test_phone_and_render_everything():
     for room in ROOMS:
         app.warp(room)
         app.frame([])
+
+
+def test_hardware_upgrade_appears_at_home():
+    app = new_app()
+    gs = app.gs
+    gs.money = 1000
+    app.warp("hardware")
+    stand_on(app, "hardware")
+    labels = [o.label for o in app.active_popup().options]
+    app.choose(labels.index("Hot tub"))
+    assert "hottub" in gs.upgrades
+    app.warp("home")
+    assert any(h.key == "hottub" for h in app.hotspots())
+    assert not any(h.key == "gym" for h in app.hotspots())
+    app.frame([])
+
+
+def test_townsperson_date_at_your_place():
+    app = new_app()
+    gs = app.gs
+    gs.slot = 2
+    gs.affection["jaz"] = 80
+    stand_on(app, "talk:jaz")
+    app.choose(0)                                        # Talk
+    labels = [o.label for o in app.popup.options]
+    assert "Flirt" in labels and "Ask on a date" in labels and "Come over tonight?" in labels
+    app.choose(labels.index("Come over tonight?"))
+    assert gs.date.name == "Jaz" and gs.date_place == "home"
+    assert not any(h.key == "talk:jaz" for h in app.hotspots())
+    app.warp("home")
+    app.frame([])
+    stand_on(app, "sleep")
+    assert app.active_popup().title.startswith("Get frisky with Jaz")
+    app.choose(0)                                        # with a condom
+    assert gs.total_hookups == 1 and gs.date is None
+
+
+def test_stadium_and_batting_minigame():
+    app = new_app()
+    gs = app.gs
+    gs.day, gs.slot = 3, 2
+    app.warp("ballpark")
+    app.frame([])
+    stand_on(app, "plate")
+    app.choose(0)
+    assert app.scene == "batting" and app.ab.mode == "game"
+    app.frame([])
+    app.bat_phase, app.pitch_t = "pitch", 0.93
+    app.ab.is_strike = True
+    app.swing()
+    assert app.ab.hits == ["homer"]
+    app.frame([])
+    app.end_batting()
+    assert app.scene == "world" and gs.played_today and gs.team_wins + gs.team_losses == 1
+    stand_on(app, "cage")
+    app.choose(0)
+    assert app.scene == "batting" and app.ab.mode == "practice"
+    app.end_batting()
+
+
+def test_phone_bills_and_cycle_apps():
+    app = new_app()
+    gs = app.gs
+    gs.character.kind = "vagina"
+    app.phone_open = True
+    for tab in ("bills", "cycle", "swipe", "matches"):
+        app.phone_tab = tab
+        app.frame([])
+    app.phone_tab = "bills"
+    pay = app.phone_buttons()[("pay", "rent")]
+    money = gs.money
+    app.click_phone(pay.rect.center)
+    assert gs.money == money - 140
+    gs.phone_off = True
+    app.phone_tab = "swipe"
+    app.frame([])
+    assert "nope" not in app.phone_buttons()
+
+
+def test_job_options_at_diner():
+    app = new_app()
+    app.warp("diner")
+    stand_on(app, "eat")
+    labels = [o.label for o in app.active_popup().options]
+    assert any(l.startswith("Apply: Line cook") for l in labels)

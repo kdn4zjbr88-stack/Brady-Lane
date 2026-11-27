@@ -162,6 +162,8 @@ def _door_rect(b: Building):
 
 
 def window_rects(b: Building):
+    if b.key == "ballpark":
+        return []
     roof, face = _layout(b)
     door = _door_rect(b).inflate(70, 30)
     out = []
@@ -173,7 +175,49 @@ def window_rects(b: Building):
     return out
 
 
+def _stadium(s, b: Building):
+    r = b.rect
+    soft_shadow(s, r, (14, 16), 90, 120, 3)
+    pygame.draw.ellipse(s, (150, 148, 145), r)
+    for i, c in enumerate([(70, 110, 170), (60, 95, 150), (80, 125, 185), (60, 95, 150)]):
+        pygame.draw.ellipse(s, c, r.inflate(-30 - i * 34, -26 - i * 30))
+        rng = random.Random(i)
+        inner = r.inflate(-30 - i * 34, -26 - i * 30)
+        for _ in range(220):                      # fans in the stands
+            a = rng.uniform(0, math.tau)
+            px = inner.centerx + math.cos(a) * (inner.w / 2 - 8)
+            py = inner.centery + math.sin(a) * (inner.h / 2 - 8)
+            pygame.draw.circle(s, rng.choice([(240, 200, 160), (120, 80, 50), (200, 60, 80), (250, 250, 250)]),
+                               (px, py), 3)
+    field = r.inflate(-190, -170)
+    pygame.draw.ellipse(s, (70, 140, 70), field)
+    for i in range(0, field.w, 26):
+        alpha_rect(s, (255, 255, 255, 12) if (i // 26) % 2 else (0, 0, 0, 8), (field.x + i, field.y + 20, 13, field.h - 40))
+    cx, cy = field.centerx, field.centery + 30
+    diamond = [(cx, cy + 70), (cx + 70, cy), (cx, cy - 70), (cx - 70, cy)]
+    pygame.draw.polygon(s, (190, 140, 90), [(x, y + 6) for x, y in diamond])
+    pygame.draw.polygon(s, (70, 140, 70), [(cx, cy + 46), (cx + 44, cy + 2), (cx, cy - 42), (cx - 44, cy + 2)])
+    for x, y in diamond:
+        pygame.draw.rect(s, (250, 250, 250), (x - 5, y + 1, 10, 10))
+    pygame.draw.circle(s, (190, 140, 90), (cx, cy + 4), 12)
+    gate = pygame.Rect(r.centerx - 90, r.y - 4, 180, 56)
+    soft_shadow(s, gate, (4, 6), 70, 8, 2)
+    grad(s, gate, (40, 90, 160), (25, 60, 115), 10)
+    t = font(18).render("BALLERS STADIUM", True, (255, 255, 255))
+    s.blit(t, t.get_rect(center=(gate.centerx, gate.y + 20)))
+    t2 = font(11, False).render("Home of the Genitopia Ballers", True, (220, 230, 245))
+    s.blit(t2, t2.get_rect(center=(gate.centerx, gate.y + 40)))
+    for fx_, fy_ in ((r.x + 60, r.y + 60), (r.right - 60, r.y + 60), (r.x + 60, r.bottom - 60), (r.right - 60, r.bottom - 60)):
+        pygame.draw.rect(s, (70, 70, 78), (fx_ - 3, fy_ - 4, 6, 40))
+        grad(s, (fx_ - 18, fy_ - 18, 36, 16), (240, 240, 235), (190, 190, 185), 4)
+
+
+STADIUM_LIGHTS = []
+
+
 def _building(s, b: Building):
+    if b.key == "ballpark":
+        return _stadium(s, b)
     r = b.rect
     soft_shadow(s, r, (12, 14), 80, 8)
     roof_r, face = _layout(b)
@@ -246,17 +290,22 @@ def town_surface():
     for r in ROADS:
         pygame.draw.rect(s, ASPHALT, r)
         noise(s, r, ASPHALT, 0.12, r.w * r.h // 30, rng, (0.5, 1.4))
-    for x in range(0, w, 80):
-        if not 1230 < x < 1370:
-            pygame.draw.rect(s, (230, 205, 100), (x, 817, 42, 6), border_radius=3)
-    for y in range(0, h, 80):
-        if not 750 < y < 890:
-            pygame.draw.rect(s, (230, 205, 100), (1297, y, 6, 42), border_radius=3)
-    for i in range(7):                           # crosswalks
-        pygame.draw.rect(s, (235, 235, 235), (1170 - 0, 770 + i * 16, 50, 9), border_radius=2)
-        pygame.draw.rect(s, (235, 235, 235), (1380, 770 + i * 16, 50, 9), border_radius=2)
-        pygame.draw.rect(s, (235, 235, 235), (1250 + i * 16, 690, 9, 50), border_radius=2)
-        pygame.draw.rect(s, (235, 235, 235), (1250 + i * 16, 890, 9, 50), border_radius=2)
+    horiz = [r for r in ROADS if r.w > r.h]
+    vert = [r for r in ROADS if r.h > r.w]
+    for r in horiz:                              # lane markings
+        for x in range(0, w, 80):
+            if not any(v.left - 10 < x < v.right + 10 for v in vert):
+                pygame.draw.rect(s, (230, 205, 100), (x, r.centery - 3, 42, 6), border_radius=3)
+    for v in vert:
+        for y in range(0, h, 80):
+            if not any(r.top - 10 < y < r.bottom + 10 for r in horiz):
+                pygame.draw.rect(s, (230, 205, 100), (v.centerx - 3, y, 6, 42), border_radius=3)
+        for r in horiz:                          # crosswalks at each intersection
+            for i in range(7):
+                pygame.draw.rect(s, (235, 235, 235), (v.left - 70, r.top + 10 + i * 16, 50, 9), border_radius=2)
+                pygame.draw.rect(s, (235, 235, 235), (v.right + 20, r.top + 10 + i * 16, 50, 9), border_radius=2)
+                pygame.draw.rect(s, (235, 235, 235), (v.left + 10 + i * 16, r.top - 70, 9, 50), border_radius=2)
+                pygame.draw.rect(s, (235, 235, 235), (v.left + 10 + i * 16, r.bottom + 10, 9, 50), border_radius=2)
     for b in BUILDINGS:                          # driveway/path to each door
         dz = b.door_zone
         pygame.draw.rect(s, PAVEMENT, dz.inflate(-30, 0), border_radius=6)
@@ -312,6 +361,10 @@ def town_lights(surf, cam, slot, ticks):
             r = wr.move(-ox, -oy)
             pygame.draw.rect(surf, (250, 215, 130), r, border_radius=2)
             pygame.draw.rect(surf, (255, 235, 170), r.inflate(-12, -12), border_radius=2)
+        if b.key == "ballpark":
+            r = b.rect
+            for fx_, fy_ in ((r.x + 60, r.y + 52), (r.right - 60, r.y + 52), (r.x + 60, r.bottom - 68), (r.right - 60, r.bottom - 68)):
+                surf.blit(_glow_sprite(120, (230, 230, 200)), (fx_ - ox - 120, fy_ - oy - 120), special_flags=pygame.BLEND_RGB_ADD)
         if b.key == "club":
             pulse = 0.6 + 0.4 * math.sin(ticks / 300)
             neon = _glow_sprite(150, (int(255 * pulse), 60, int(190 * pulse)))
@@ -371,6 +424,11 @@ def _floor(s, room: Room, rng):
     elif kind == "club":
         s.fill((28, 20, 34))
         noise(s, (0, 0, w, h), (40, 28, 48), 0.25, w * h // 30, rng, (0.5, 1.2))
+    elif kind == "field":
+        s.fill((80, 150, 75))
+        for x in range(0, w, 60):
+            alpha_rect(s, (255, 255, 255, 14) if (x // 60) % 2 else (0, 0, 0, 10), (x, 0, 60, h))
+        noise(s, (0, 0, w, h), (80, 150, 75), 0.08, w * h // 40, rng, (0.5, 1.4))
     elif kind == "dark":
         s.fill((48, 46, 52))
         noise(s, (0, 0, w, h), (55, 52, 60), 0.12, w * h // 25, rng, (0.5, 1.3))
@@ -422,7 +480,8 @@ def paint_furniture(s, kind, r, rng):
     if kind == "wall":
         grad(s, r, (200, 185, 165), (150, 135, 120), horizontal=True)
         return
-    soft_shadow(s, r, (6, 9), 70, 10, 2)
+    if kind not in ("diamond", "scoreboard"):
+        soft_shadow(s, r, (6, 9), 70, 10, 2)
     if kind in ("bed", "bed_red"):
         sheet = (90, 130, 205) if kind == "bed" else (205, 60, 85)
         grad(s, r, (120, 85, 60), (85, 58, 40), 12)
@@ -549,6 +608,121 @@ def paint_furniture(s, kind, r, rng):
         alpha_rect(s, (200, 220, 240, 60), r.inflate(-8, -8), 4)
         for i in range(12):
             ball(s, (215, 220, 230), (r.x + 14 + i * 17, r.centery + (i % 2) * 6), 4, steps=3)
+    elif kind == "bed_luxe":
+        grad(s, r, (70, 50, 40), (40, 28, 22), 14)
+        grad(s, (r.x, r.y - 14, r.w, 24), (90, 65, 50), (55, 40, 30), 10)
+        grad(s, r.inflate(-12, -12), (250, 248, 242), (228, 222, 214), 12)
+        for i in range(3):
+            _pillow(s, (r.x + 14 + i * (r.w - 28) // 3, r.y + 12, (r.w - 40) // 3, 30))
+        blanket = pygame.Rect(r.x + 8, r.y + 54, r.w - 16, r.h - 62)
+        grad(s, blanket, (220, 190, 120), (170, 135, 70), 10)
+        grad(s, (blanket.x, blanket.y, blanket.w, 12), (250, 248, 242), (225, 220, 212), 6)
+        for i in range(6):
+            pygame.draw.circle(s, (240, 215, 150), (blanket.x + 20 + i * (blanket.w - 40) // 5, blanket.centery + 6), 2)
+    elif kind == "crib_nursery":
+        alpha_ellipse(s, (250, 200, 230, 90), r.inflate(70, 60))
+        grad(s, r, (250, 245, 235), (225, 215, 200), 12)
+        grad(s, r.inflate(-14, -14), (250, 210, 230), (230, 180, 210), 10)
+        for x in range(r.x + 6, r.right - 4, 10):
+            pygame.draw.line(s, (240, 232, 220), (x, r.y + 2), (x, r.y + 8), 3)
+        for i, c in enumerate([(250, 210, 90), (140, 200, 240), (240, 140, 180), (150, 220, 160)]):
+            pygame.draw.line(s, (200, 200, 205), (r.centerx, r.y - 10), (r.x + 20 + i * 24, r.y + 14), 1)
+            ball(s, c, (r.x + 20 + i * 24, r.y + 16), 6, steps=4)
+    elif kind == "kitchen_pro":
+        grad(s, r, (70, 70, 78), (40, 40, 46), 6)
+        grad(s, (r.x, r.y, r.w, 18), (235, 235, 238), (200, 200, 205), 6)
+        for i in range(4):
+            cx, cy = r.x + 28 + (i % 2) * 44, r.y + 34 + (i // 2) * 26
+            pygame.draw.circle(s, (30, 30, 34), (cx, cy), 11)
+            pygame.draw.circle(s, (200, 70, 50) if i == 0 else (70, 70, 78), (cx, cy), 6)
+        grad(s, (r.right - 70, r.y + 24, 56, 46), (180, 185, 195), (130, 135, 145), 6)
+        pygame.draw.rect(s, (60, 60, 66), (r.right - 62, r.y + 30, 40, 22), border_radius=3)
+    elif kind == "tv":
+        grad(s, (r.x + 30, r.bottom - 6, r.w - 60, 10), (120, 90, 60), (80, 60, 40), 4)
+        grad(s, r, (30, 30, 36), (15, 15, 18), 6)
+        grad(s, r.inflate(-8, -8), (60, 110, 170), (30, 60, 110), 4)
+        pygame.draw.polygon(s, (110, 160, 210), [(r.x + 20, r.bottom - 5), (r.x + 60, r.y + 5), (r.x + 80, r.y + 5), (r.x + 40, r.bottom - 5)])
+    elif kind == "gym":
+        grad(s, r, (60, 60, 70), (40, 40, 48), 10)
+        grad(s, (r.x + 10, r.y + 10, 70, r.h - 20), (50, 50, 56), (30, 30, 34), 8)
+        pygame.draw.rect(s, (90, 90, 100), (r.x + 18, r.y + 18, 54, 8), border_radius=3)
+        for i in range(3):
+            y = r.y + 30 + i * 30
+            pygame.draw.line(s, (180, 185, 195), (r.x + 100, y), (r.right - 14, y), 4)
+            for x in (r.x + 100, r.right - 14):
+                pygame.draw.circle(s, (40, 40, 46), (x, y), 9)
+    elif kind == "shower_rain":
+        grad(s, r, (220, 225, 230), (175, 185, 195), 8)
+        grad(s, r.inflate(-10, -10), (60, 64, 70), (40, 44, 50), 6)
+        alpha_rect(s, (170, 215, 240, 90), r.inflate(-14, -14), 6)
+        pygame.draw.rect(s, (200, 205, 215), (r.centerx - 30, r.y + 18, 60, 60), border_radius=8)
+        for i in range(36):
+            pygame.draw.circle(s, (120, 125, 135), (r.centerx - 24 + (i % 6) * 10, r.y + 24 + (i // 6) * 10), 1)
+        for i in range(10):
+            pygame.draw.line(s, (200, 230, 250), (r.x + 30 + i * 10, r.y + 90), (r.x + 26 + i * 10, r.y + 130), 1)
+    elif kind == "hottub":
+        grad(s, r, (150, 110, 80), (105, 75, 55), 26)
+        inner = r.inflate(-28, -28)
+        grad(s, inner, (90, 200, 220), (40, 140, 180), 22)
+        for i in range(18):
+            rr = random.Random(i)
+            pygame.draw.circle(s, (220, 245, 250), (rr.randint(inner.x + 10, inner.right - 10),
+                                                    rr.randint(inner.y + 10, inner.bottom - 10)), rr.randint(2, 5), 1)
+        alpha_rect(s, (255, 255, 255, 50), (inner.x + 10, inner.y + 8, inner.w - 20, 10), 6)
+    elif kind == "diamond":
+        cx, cy = r.centerx, r.centery
+        pts = [(cx, r.bottom), (r.right, cy), (cx, r.top), (r.x, cy)]
+        pygame.draw.polygon(s, (190, 140, 90), pts)
+        noise(s, r.inflate(-160, -140), (190, 140, 90), 0.08, 1500, rng, (0.5, 1.5))
+        inner = [(cx, r.bottom - 90), (r.right - 110, cy), (cx, r.top + 90), (r.x + 110, cy)]
+        pygame.draw.polygon(s, (85, 155, 80), inner)
+        for x, y in pts:
+            soft_shadow(s, (x - 12, y - 12, 24, 24), (2, 3), 40, 4, 1)
+            pygame.draw.rect(s, (250, 250, 250), (x - 12, y - 12, 24, 24), border_radius=3)
+        pygame.draw.circle(s, (180, 130, 85), (cx, cy + 10), 30)
+        pygame.draw.rect(s, (250, 250, 250), (cx - 10, cy + 6, 20, 6))
+        for x0 in (r.x, r.right):
+            pygame.draw.line(s, (250, 250, 250), (cx, r.bottom), (x0 + (cx - x0) * -0.3, cy - (r.bottom - cy) * 1.3), 3)
+    elif kind == "bleachers":
+        for i in range(5):
+            grad(s, (r.x, r.y + i * 28, r.w, 26), (200, 205, 212), (150, 155, 165), 4)
+        crowd = random.Random(9)
+        for _ in range(420):
+            x, y = crowd.randint(r.x + 6, r.right - 6), r.y + crowd.randint(0, 4) * 28 + 6
+            c = crowd.choice([(240, 200, 160), (120, 80, 50), (200, 60, 80), (60, 110, 200), (250, 250, 250)])
+            ball(s, c, (x, y), 6, steps=3)
+    elif kind == "scoreboard":
+        grad(s, r, (30, 34, 40), (15, 18, 22), 8)
+    elif kind == "dugout":
+        grad(s, r, (40, 90, 160), (25, 60, 115), 10)
+        grad(s, r.inflate(-12, -16), (30, 30, 36), (15, 15, 18), 6)
+        for i in range(5):
+            pygame.draw.rect(s, (200, 170, 120), (r.x + 16 + i * 34, r.bottom - 14, 6, 26), border_radius=2)
+    elif kind == "cage":
+        grad(s, r, (90, 150, 85), (70, 130, 70), 6)
+        pygame.draw.rect(s, (190, 140, 90), r.inflate(-60, -60), border_radius=10)
+        for x in range(r.x, r.right + 1, 14):
+            pygame.draw.line(s, (60, 60, 66), (x, r.y), (x, r.bottom), 1)
+        for y in range(r.y, r.bottom + 1, 14):
+            pygame.draw.line(s, (60, 60, 66), (r.x, y), (r.right, y), 1)
+        grad(s, (r.centerx - 22, r.y + 10, 44, 50), (80, 80, 90), (50, 50, 58), 6)
+    elif kind == "concession":
+        grad(s, r, (220, 60, 50), (160, 35, 30), 8)
+        for i in range(0, r.w, 20):
+            col = (250, 250, 245) if (i // 20) % 2 else (220, 60, 50)
+            grad(s, (r.x + i, r.y - 26, 20, 24), shade(col, 1.05), shade(col, 0.85))
+        t = font(14).render("HOT DOGS · NACHOS · BEER", True, (255, 240, 200))
+        s.blit(t, t.get_rect(center=(r.centerx, r.centery + 6)))
+    elif kind == "counter_orange":
+        grad(s, r, (230, 130, 50), (170, 85, 25), 8)
+        grad(s, (r.x, r.y, r.w, 18), (240, 236, 228), (205, 198, 190), 8)
+    elif kind == "toolwall":
+        grad(s, r, (170, 140, 100), (130, 100, 70), 4)
+        for i in range(14):
+            x = r.x + 14 + i * 32
+            c = rng.choice([(200, 60, 50), (240, 190, 50), (60, 120, 200), (90, 90, 100)])
+            pygame.draw.rect(s, c, (x, r.y + 10, 8, 30), border_radius=2)
+            pygame.draw.rect(s, (180, 185, 195), (x - 4, r.y + 38, 16, 8), border_radius=2)
     elif kind == "dresser":
         grad(s, r, (150, 105, 70), (105, 72, 48), 6)
         for i in range(2):
@@ -556,8 +730,8 @@ def paint_furniture(s, kind, r, rng):
             pygame.draw.circle(s, (220, 190, 110), (r.centerx, r.y + 12 + i * 20), 3)
 
 
-def room_surface(room: Room):
-    key = ("room", room.key)
+def room_surface(room: Room, upgrades=()):
+    key = ("room", room.key, tuple(sorted(upgrades)) if room.key == "home" else ())
     s = _cache.get(key)
     if s is None:
         s = pygame.Surface(room.size)
@@ -565,7 +739,8 @@ def room_surface(room: Room):
         _floor(s, room, rng)
         _walls(s, room)
         for f in sorted(room.furniture, key=lambda f: (f.solid, f.rect.bottom)):
-            paint_furniture(s, f.kind, f.rect, rng)
+            if f.present(upgrades):
+                paint_furniture(s, f.kind_for(upgrades), f.rect, rng)
         _cache[key] = s
     return s
 

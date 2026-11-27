@@ -24,6 +24,7 @@ python main.py
 | E / Enter / Space | Pick the first available choice |
 | P / Tab | Open the phone (Spark dating app) |
 | B | Baby menu (feed, cuddle) |
+| SPACE | Swing the bat (at the stadium) |
 | Esc | Close phone or pop-up |
 
 Walk up to a door, furniture, a resident or an event and choices pop up.
@@ -32,18 +33,42 @@ Walk up to a door, furniture, a resident or an event and choices pop up.
 
 | Place | What you can do |
 | --- | --- |
-| Home | Sleep, shower, toilet, fridge, mirror, crib |
-| Bean's Diner | Meals, and whatever a pregnancy craving demands (Chef Bean) |
-| Office | Work shifts (Boss Richard) |
-| Pharmacy | Condoms, pregnancy tests, morning-after pill, baby formula (Pharmacist Patty) |
+| Home | Sleep, shower, toilet, fridge, mirror, crib, plus any upgrades you buy |
+| Bean's Diner | Meals and pregnancy cravings (Chef Bean). Job: line cook |
+| Office | Job: office assistant (Boss Richard) |
+| Pharmacy | Condoms, tests, morning-after pill, formula, pads & tampons, painkillers (Patty). Job: clerk |
 | Genitopia General | STI tests, prenatal checkups, delivering the baby (Dr. Ova) |
-| Ink & Steel | Piercings (Pierce) |
-| Club Velvet | Evening only, no babies: drinks with Rocco, dancing, chatting people up |
+| Ink & Steel | Piercings (Pierce). Job: apprentice |
+| Club Velvet | Evening only, no babies: drinks with Rocco, dancing, chatting people up. Job: bartender |
+| Ballers Stadium | Watch games, batting practice, play in games (Coach Rod). Job: concessions |
+| Screw & Nail | Home upgrades (Mandy) |
 | Apartments | Your date's bedroom, unlocked when someone is expecting you |
 
-Around town you'll meet **Mayor Johnson**, **Granny Muffin** on her bench and **Officer Woody** on patrol. Everyone has things to say, and what they say changes with your situation (smelly, pregnant, new baby...).
+Around town you'll meet **Mayor Johnson**, **Granny Muffin** on her bench, **Officer Woody** on patrol and **Jaz** jogging around the fountain.
+
+**Dialogue changes every day:** each resident has a daily rotation of lines, topical things to say (rain, game days, last night's score, your overdue bills, your period, your hot tub, the weekday, your baby...) and fresh town gossip.
 
 **Town events** pop up at random: a street musician, a taco truck, a lost wallet, a free condom stand, a block party, a stray puppy, a piercing flash sale, a street preacher, and rain.
+
+## Romance with the residents
+
+Talking raises affection. Then you can **Flirt** (a charm check, once a day), **Ask on a date** (from 35 affection, $25) and, from 65 affection, ask them to **come over tonight**: they'll be waiting in your bedroom. Granny Muffin, Dr. Ova and Boss Richard will politely turn you down.
+
+## Jobs and bills
+
+Six jobs, each with its own hours, pay and perk; apply at the workplace (some need enough charm). Every 6 shifts you get a raise. Rent, power & water, and your phone plan are due every 7 days; pay them in the phone's Bills app. Late bills cost a fee, unpaid utilities shut off your shower and kitchen, an unpaid phone kills the dating app, and rent 4 days late gets you evicted.
+
+## Baseball
+
+The Genitopia Ballers play every 3rd day in the evening. Watch from the bleachers, take batting practice in the cage, or step up to home plate and play: press SPACE to swing as the pitch arrives (fastball, changeup, curveball). Wins pay a bonus and make you famous, which adds charm.
+
+## House upgrades
+
+Luxury bed, rain shower, chef's kitchen, giant TV, home gym, hot tub and a dreamy nursery, each shown in your home with something new to do. Upgrades raise your power bill a little.
+
+## Menstrual cycle
+
+Playing the vagina character, you have a (compressed, 10-day) cycle tracked in the phone's Cycle app: a period that needs supplies and can bring cramps, a fertile window where unprotected sex is much riskier, and PMS. Pregnancy pauses it.
 
 ## Dating
 
@@ -65,7 +90,7 @@ python -m pytest
 
 ## Play in a browser
 
-To rebuild the single-file version after changing the game: `python -m pygbag --build .` then `python tools/make_single_html.py`.
+To rebuild the single-file version after changing the game: `pip install pygbag`, then `python tools/make_single_html.py`.
 
 Or serve the build folder:
 

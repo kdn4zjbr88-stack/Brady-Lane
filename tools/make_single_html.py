@@ -57,4 +57,7 @@ if head == -1:
 html = html[:head + len("<head>")] + "\n" + shim + html[head + len("<head>"):]
 html = re.sub(r"<title>.*?</title>", "<title>Brady: Genitopia</title>", html, count=1)
 OUT.write_text(html, encoding="utf-8")
+SITE = ROOT / "docs" / "index.html"          # GitHub Pages serves this as the game's web link
+SITE.parent.mkdir(exist_ok=True)
+SITE.write_text(html, encoding="utf-8")
 print(f"wrote {OUT} ({OUT.stat().st_size // 1024} KB)")

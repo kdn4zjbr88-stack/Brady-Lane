@@ -4,6 +4,8 @@ A cheeky adults-only life sim set in the town of **Genitopia**. Pick your charac
 
 ## Run
 
+**Play online:** https://kdn4zjbr88-stack.github.io/Brady-Lane/ (GitHub Pages, served from `docs/`).
+
 **Easiest (any computer):** double-click `Play Brady.html`. It opens in your web browser; no install needed, just an internet connection. Click once inside the game if it doesn't start.
 
 **Mac, easiest:** double-click `Play Brady.command`. The first time, macOS may block it: right-click it, choose **Open**, then **Open** again.

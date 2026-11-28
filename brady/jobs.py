@@ -29,6 +29,8 @@ JOBS = {
                       {"energy": -10, "mood": 4}, "Piercings 50% off"),
     "bartender": Job("bartender", "Bartender", "club", 40, (2, 3), 40,
                      {"energy": -18, "mood": 3, "hygiene": -8}, "Tips + flirty customers"),
+    "trainer": Job("trainer", "Personal trainer", "gym", 50, (0, 1, 2), 35,
+                   {"energy": -16, "hygiene": -14, "mood": 4}, "Free gym workouts"),
     "concessions": Job("concessions", "Stadium concessions", "ballpark", 45, (0, 1, 2), 0,
                        {"energy": -16, "hygiene": -10}, "Bonus pay on game days"),
 }

@@ -91,6 +91,7 @@ def test_missed_labor_still_delivers():
     gs = new_game()
     gs.rng.random = lambda: 0.0
     actions.hook_up(gs, partner("vagina"), "inside")
+    gs.rng.random = lambda: 0.5          # partner keeps the pregnancy
     live_days(gs, lambda: gs.baby is not None)
     assert gs.baby is not None and not gs.in_labor
 
@@ -353,3 +354,114 @@ def test_dialogue_changes_day_to_day():
     gs.talked_today = set()
     gs.day = 2
     assert "rain" in npcs.pick_line(gs, mayor).text
+
+
+# ---- relationships, marriage, abortion, pets, boutique ----------------------------
+def test_relationship_to_marriage():
+    from brady import npcs, relationships as rel
+    gs = new_game()
+    gs.money = 5000
+    jaz = npcs.NPC_BY_KEY["jaz"]
+    gs.affection["jaz"] = 50
+    rel.ask_out(gs, jaz)
+    assert not gs.relationship                       # not ready yet
+    gs.affection["jaz"] = 80
+    assert rel.ask_out(gs, jaz) is None and gs.relationship == "dating" and gs.partner_key == "jaz"
+    assert npcs.stage(gs, jaz) == "Girlfriend"
+    assert rel.ask_out(gs, npcs.NPC_BY_KEY["coach"]) is not None     # already taken
+    assert rel.propose(gs, jaz) is not None          # no ring
+    rel.buy_ring(gs)
+    assert rel.propose(gs, jaz) is not None          # too soon
+    gs.day += 3
+    gs.affection["jaz"] = 90
+    assert rel.propose(gs, jaz) is None and gs.relationship == "engaged"
+    assert rel.wedding(gs) is None and gs.relationship == "married"
+    rent = next(b for b in gs.bills if b.key == "rent")
+    assert rent.amount(gs) == 70
+    money = gs.money
+    actions.sleep(gs)
+    assert gs.money >= money + rel.DAILY_SPOUSE_INCOME - 1
+    gs.slot = 2
+    assert jaz in npcs.npcs_in("home", gs) and jaz not in npcs.npcs_in("town", gs)
+
+
+def test_gifts_raise_affection_more_for_partner():
+    from brady import npcs, relationships as rel
+    gs = new_game()
+    gs.money = 500
+    fern = npcs.NPC_BY_KEY["fern"]
+    rel.buy_gift(gs, "Roses")
+    assert rel.give_gift(gs, fern, "Roses") is None and npcs.affection(gs, fern) == 8
+    assert rel.give_gift(gs, fern, "Roses") is not None
+
+
+def test_cheating_gets_you_dumped():
+    from brady import npcs
+    gs = new_game()
+    gs.partner_key, gs.relationship = "coach", "dating"
+    gs.affection["coach"] = 90
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("vagina"), "condom") if gs.condoms else None
+    assert gs.relationship == "" and npcs.affection(gs, npcs.NPC_BY_KEY["coach"]) == 30
+
+
+def test_abortion_options_and_limits():
+    from brady.model import Conception
+    gs = new_game(kind="vagina")
+    gs.money = 1000
+    assert actions.abortion(gs, "pill") is not None           # not pregnant
+    gs.conception = Conception(gs.day - 5, "Andre", revealed=True)
+    assert actions.abortion(gs, "pill") is None and gs.conception is None and gs.money == 850
+    gs.conception = Conception(gs.day - 9, "Andre", revealed=True)
+    assert actions.abortion(gs, "pill") is not None           # too far along for pills
+    assert actions.abortion(gs, "procedure") is None and gs.conception is None
+    gs.conception = Conception(gs.day - 11, "Andre", revealed=True)
+    assert actions.abortion(gs, "procedure") is not None
+
+
+def test_partner_may_choose_to_end_pregnancy():
+    gs = new_game()
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("vagina"), "inside")
+    live_days(gs, lambda: gs.day > 8)
+    assert gs.conception is None and gs.baby is None
+    assert any("end the pregnancy" in m for m in gs.log)
+
+
+def test_pets():
+    from brady import pets
+    gs = new_game()
+    gs.money = 1000
+    for kind in ("testicles", "ovaries"):
+        assert pets.buy(gs, kind) is None
+    assert pets.buy(gs, "sperm") is not None                  # max two
+    p = gs.pets[0]
+    p.fullness = p.happiness = 10
+    assert pets.feed(gs, 0) is None and pets.play(gs, 0) is None
+    assert p.fullness == 100 and p.happiness == 100
+    gs.pet_food = 0
+    assert pets.feed(gs, 1) is not None
+
+
+def test_boutique_accessories_change_look_and_charm():
+    from brady import shops
+    gs = new_game()
+    gs.money = 1000
+    gs.mood = 50
+    before = gs.charm
+    assert shops.buy_or_wear(gs, "goldchain") is None
+    gs.mood = 50
+    assert gs.character.accessory == "goldchain" and gs.charm == before + 8
+    shops.buy_or_wear(gs, "goldchain")                         # take it off
+    assert gs.wearing == "" and gs.character.accessory == ""
+
+
+def test_gym_and_trainer_job():
+    from brady import jobs, shops
+    gs = new_game()
+    gs.energy = 100
+    assert shops.gym_workout(gs) is None and gs.fitness == 2 and gs.money == 140
+    gs.mood = gs.hygiene = 100
+    assert jobs.apply(gs, "trainer") is None
+    gs.energy, gs.slot = 100, 0
+    assert shops.gym_workout(gs) is None and gs.money == 140

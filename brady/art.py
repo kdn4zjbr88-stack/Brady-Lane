@@ -172,8 +172,36 @@ def _stud(pen, x, y):
     pen.circle((255, 255, 255), x - 1, y - 1, 1.1)
 
 
-def _accessory(pen, kind, top, hair):
-    if kind == "tophat":
+def _accessory(pen, kind, top, hair, fx=0, fy=0, neck=0):
+    if kind == "sunglasses":
+        for side in (-1, 1):
+            pen.blob((25, 25, 32), fx + side * 16, fy + 1, 26, 18, steps=6, light=1.6)
+            pen.alpha_ellipse((255, 255, 255, 70), fx + side * 16 - 5, fy - 3, 8, 4)
+        pen.rrect((25, 25, 32), fx, fy - 2, 10, 4, 2)
+    elif kind == "cowboyhat":
+        pen.blob((150, 100, 55), 0, top + 4, 150, 26, steps=8)
+        pen.capsule((165, 112, 62), 0, top - 20, 72, 50, steps=8)
+        pen.rrect((90, 55, 30), 0, top - 4, 72, 8, 3)
+    elif kind == "flowercrown":
+        for i in range(9):
+            x = -56 + i * 14
+            col = [(240, 110, 150), (250, 210, 90), (180, 140, 240)][i % 3]
+            pen.blob((90, 160, 80), x + 5, top + 14, 10, 6, steps=3)
+            pen.blob(col, x, top + 8 - abs(x) * 0.08, 14, 14, steps=5, light=1.3)
+            pen.circle((255, 240, 160), x, top + 8 - abs(x) * 0.08, 2.5)
+    elif kind == "bowtie":
+        for side in (-1, 1):
+            pen.poly((200, 40, 60), [(fx, neck), (fx + side * 24, neck - 12), (fx + side * 24, neck + 12)])
+        pen.blob((170, 30, 50), fx, neck, 12, 12, steps=4)
+    elif kind == "goldchain":
+        for i in range(15):
+            a = math.pi * (0.15 + 0.7 * i / 14)
+            pen.blob((235, 195, 70), fx + math.cos(a) * 34, neck - 14 + math.sin(a) * 22, 9, 7, steps=3, light=1.4)
+        pen.blob((240, 205, 80), fx, neck + 12, 16, 18, steps=5, light=1.5)
+    elif kind == "collar":
+        pen.rrect((25, 25, 30), fx, neck, 70, 14, 6)
+        pen.rrect((250, 250, 250), fx, neck, 16, 10, 3)
+    elif kind == "tophat":
         pen.ellipse((25, 25, 30), 0, top + 2, 96, 16)
         pen.capsule((35, 35, 42), 0, top - 30, 58, 64, steps=6, dark=0.7, light=1.4)
         pen.rrect((150, 30, 40), 0, top - 8, 58, 9, 2)
@@ -260,7 +288,7 @@ def _paint_character(look: Character, k, mood, tired, belly, frame, piercings):
             pygame.draw.circle(surf, (40, 40, 45), c, 14 * k, max(1, round(2 * k)))
         pen.stroke((40, 40, 45), [(fx - 3, fy), (fx + 3, fy)], 2)
     elif look.accessory:
-        _accessory(pen, look.accessory, top, hair)
+        _accessory(pen, look.accessory, top, hair, fx, fy, fy + 44)
     return surf
 
 
@@ -368,4 +396,65 @@ def draw_baby(surf, b: Baby, feet, scale=1.0, ticks=0, frame=-1):
     draw_shadow(surf, feet, 60 * scale)
     x, y = feet
     hop = abs(math.sin(ticks / 160)) * 3 * scale if frame >= 0 else 0
+    surf.blit(sprite, (x - sprite.get_width() / 2, y - FEET_Y * scale - hop))
+
+
+# ---- pets -----------------------------------------------------------------------------
+PET_COLORS = {"testicles": (232, 178, 160), "ovaries": (238, 140, 160), "sperm": (240, 240, 248)}
+
+
+def _paint_pet(kind, k, frame):
+    surf = pygame.Surface((round(CANVAS[0] * k), round(CANVAS[1] * k)), pygame.SRCALPHA)
+    pen = Pen(surf, k)
+    col = PET_COLORS[kind]
+    wob = math.sin(frame * math.pi / 2)
+
+    def eyes(x, y, sz=1.0):
+        for side in (-1, 1):
+            pen.ellipse((30, 20, 20), x + side * 6 * sz, y, 6 * sz, 8 * sz)
+            pen.circle((255, 255, 255), x + side * 6 * sz - 1, y - 2 * sz, 1.4 * sz)
+
+    if kind == "testicles":
+        for i, side in enumerate((-1, 1)):
+            y = -32 - (abs(wob) * 8 if i == (frame % 2) else 0)
+            for leg in (-6, 6):
+                pen.capsule(shade(col, 0.85), side * 20 + leg, -8, 6, 14, steps=4)
+            pen.blob(col, side * 20, y, 44, 46)
+            rng = random.Random(side)
+            for _ in range(14):
+                pen.circle(shade(col, 0.7), side * 20 + rng.uniform(-18, 18), y + rng.uniform(-18, 18), 1.2)
+            eyes(side * 20, y - 4, 0.9)
+            pen.ellipse((150, 60, 70), side * 20, y + 9, 8, 4)
+    elif kind == "ovaries":
+        tube = (225, 120, 145)
+        pen.blob(shade(col, 0.95), 0, -58, 34, 30, steps=8)          # little central bulb
+        for side in (-1, 1):
+            pts = [(side * 10, -62), (side * 26, -76 - wob * 6), (side * 42, -70), (side * 44, -52)]
+            pen.stroke(tube, pts, 6)
+            for f in range(3):                                         # waving fringe 'fingers'
+                ang = side * (0.6 + f * 0.5) + wob * 0.3
+                pen.stroke(tube, [(side * 44, -52), (side * 44 + math.cos(ang) * 10 * side, -52 + math.sin(ang) * 10)], 3)
+            pen.blob(col, side * 34, -30, 36, 30)
+            eyes(side * 34, -32, 0.8)
+            pen.ellipse((150, 60, 80), side * 34, -23, 7, 3)
+            pen.capsule(shade(col, 0.85), side * 34, -10, 6, 14, steps=4)
+    else:  # sperm
+        pts = [(16 + i * 9, -26 + math.sin(i * 0.9 + frame * 1.6) * 7) for i in range(9)]
+        pen.stroke(shade(col, 0.9), pts, 5)
+        pen.stroke(shade(col, 0.9), pts[4:], 3)
+        pen.blob(col, 0, -28, 38, 30, light=1.05)
+        pen.alpha_ellipse((150, 190, 230, 70), 4, -24, 30, 18)
+        eyes(-2, -30, 0.9)
+        pen.ellipse((150, 60, 80), -2, -21, 7, 3)
+    return surf
+
+
+def draw_pet(surf, kind, feet, scale=1.0, ticks=0, moving=False):
+    scale = round(scale, 2)
+    frame = int(ticks / 150) % 4 if moving or kind != "testicles" else 0
+    key = ("pet", kind, frame, scale)
+    sprite = _scaled(key, lambda k: _paint_pet(kind, k, frame), scale)
+    draw_shadow(surf, feet, 70 * scale)
+    x, y = feet
+    hop = abs(math.sin(ticks / 140)) * 5 * scale if kind == "testicles" else 0
     surf.blit(sprite, (x - sprite.get_width() / 2, y - FEET_Y * scale - hop))

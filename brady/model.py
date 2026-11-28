@@ -194,6 +194,18 @@ class GameState:
     affection: dict = field(default_factory=dict)  # npc key -> 0..100
     date_place: str = "apartments"               # where your date is waiting: apartments / home
     talked_today: set = field(default_factory=set)
+    # relationships: one exclusive partner who can become a fiance(e) and spouse
+    partner_key: str | None = None
+    relationship: str = ""                       # "" / dating / engaged / married
+    together_since: int = 0
+    last_partner_chat: int = 0
+    has_ring: bool = False
+    gifts: dict = field(default_factory=dict)    # gift name -> count
+    # pets, clothes
+    pets: list = field(default_factory=list)     # pets.Pet
+    pet_food: int = 0
+    wardrobe: list[str] = field(default_factory=list)
+    wearing: str = ""
     events: list = field(default_factory=list)   # active TownEvents (see events.py)
     raining: bool = False
     talks: dict = field(default_factory=dict)    # npc key -> times talked
@@ -254,6 +266,9 @@ class GameState:
         from .cycle import charm_bonus
         c = 20 + sum(PIERCINGS[p][1] for p in self.piercings) + self.mood / 5
         c += self.fitness + self.fame // 2 + charm_bonus(self)
+        if self.wearing:
+            from .shops import ACCESSORIES
+            c += ACCESSORIES[self.wearing][1]
         if self.hygiene >= 60:
             c += 10
         elif self.hygiene < 30:
@@ -349,6 +364,8 @@ class GameState:
         from .cycle import tick as cycle_tick
         cycle_tick(self)
         self._tick_baby()
+        from .pets import tick as pets_tick
+        pets_tick(self)
         self._check_end()
 
     def _tick_baby(self) -> None:
@@ -375,6 +392,8 @@ class GameState:
         from . import bills, cycle
         cycle.new_day(self)
         bills.new_day(self)
+        from .relationships import new_day as rel_new_day
+        rel_new_day(self)
         self._pregnancy_day()
         self._check_end()
         if not self.game_over and self.day > GAME_LENGTH_DAYS:
@@ -398,6 +417,12 @@ class GameState:
                     self.say(f"{partner} gave birth without you. \"You MISSED it.\" Ouch.")
                     self.adjust(mood=-20)
                 deliver(self)
+            return
+        if days == PREGNANCY_SHOWS_AFTER + 1 and not self.is_carrier and self.rng.random() < 0.35:
+            self.say(f"{partner} texts: \"I thought about it a lot. I've decided to end the pregnancy. "
+                     f"Thank you for respecting my choice.\"")
+            self.conception = None
+            self.craving = None
             return
         if days == PREGNANCY_SHOWS_AFTER:
             c.revealed = True
@@ -434,5 +459,6 @@ class GameState:
         days = min(self.day, GAME_LENGTH_DAYS)
         baby = (self.baby.happiness + self.baby.fullness) / 2 if self.baby else 0
         return int(days * 10 + self.mood + self.health + self.money / 5 + self.charm + baby
-                   + len(self.upgrades) * 20 + self.team_wins * 10
+                   + len(self.upgrades) * 20 + self.team_wins * 10 + len(self.pets) * 15
+                   + {"": 0, "dating": 40, "engaged": 80, "married": 150}[self.relationship]
                    + self.protected_hookups * 15 - self.infections_caught * 40)

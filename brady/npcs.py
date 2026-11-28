@@ -137,6 +137,32 @@ SHARED_TOPICAL = [
         Reply("Not my scene", "\"Party pooper.\"")], lambda g: any(e.key == "blockparty" for e in g.events)),
 ]
 
+SHARED_TOPICAL += [
+    Line("Congratulations on getting hitched! Genitopia loves a wedding.", [
+        Reply("Thank you!", "\"Married life looks good on you.\"", fx(mood=5))],
+        lambda g: g.relationship == "married"),
+    Line("I heard you two got engaged! When's the big day?", [
+        Reply("Soon!", "\"Invite me! I cry at weddings.\"", fx(mood=4))],
+        lambda g: g.relationship == "engaged"),
+]
+
+PARTNER_LINES = [
+    "Hey you. I was literally just thinking about you.",
+    "There's my favorite person. Come here.",
+    "Is it weird that I miss you even when it's been, like, an hour?",
+    "I told Granny Muffin about us. She already picked out baby names. Help.",
+    "Movie night at your place? You pick, I'll pretend to like it.",
+]
+
+
+def partner_line(gs, npc) -> Line:
+    from .relationships import title
+    text = PARTNER_LINES[(gs.day + gs.talks.get(npc.key, 0)) % len(PARTNER_LINES)]
+    return Line(text, [Reply("I missed you too", "They kiss you on the cheek.", fx(mood=6), 4),
+                       Reply(f"Hi, {title(npc, gs.relationship)}", "They grin like an idiot.", fx(mood=5), 4)],
+                lid=f"{npc.key}/partner")
+
+
 GOSSIP = [
     "Did you hear? {gossip_a} was seen sharing a milkshake with {gossip_b} at Bean's. Two straws!",
     "Rumor is {gossip_a} has a secret piercing. Don't ask where.",
@@ -402,6 +428,79 @@ NPCS = [
               ("Show me your drill", "\"Smooth.\" She laughs.", None, 6)),
         ], sti_risk=0.06),
 ]
+NPCS += [
+    Npc("goldie", "Goldie", "Owns Rock Solid Jewelers", Character("vagina", "Goldie", "Beige", "Blonde", "goldchain"),
+        "jeweler", (400, 164), 33, daily=[
+            L("Diamonds are forever. Unlike most Genitopia relationships. Ha!",
+              ("Ouch", "\"I call it like I see it, hon.\""),
+              ("Mine will last", "\"Then you'll need a ring. Just saying.\"", None, 5)),
+            L("A girl's best friend? Diamonds. A guy's best friend? Also diamonds. Everyone loves diamonds.",
+              ("Not me", "\"Liar.\""),
+              ("Show me the sparkly stuff", "\"NOW we're talking.\"", None, 6)),
+            L("It's {weekday} and I've sold three rings. Love is in the air. Or the AC is broken.",
+              ("Probably love", "\"Aww.\""), ("Probably the AC", "\"...It's the AC.\"")),
+        ], sti_risk=0.06),
+    Npc("fern", "Fern", "Florist at Petal Pushers", Character("penis", "Fern", "Brown", "Brown", "flowercrown"),
+        "florist", (400, 164), 29, daily=[
+            L("Roses say 'I love you'. Daisies say 'I like you'. Cactus says 'leave me alone'.",
+              ("What says 'I'm horny'?", "\"...Orchids. Definitely orchids.\"", None, 5),
+              ("Roses it is", "\"A classic.\"")),
+            L("I talk to my plants every morning. They're excellent listeners.",
+              ("That's sweet", "\"They think you're sweet too.\"", None, 6),
+              ("Do they talk back?", "\"Only the ferns. Obviously.\"")),
+            L("Happy {weekday}! Fun fact: chocolate releases the same chemicals as falling in love.",
+              ("Buy you some?", "He blushes as pink as the peonies.", None, 8),
+              ("Science!", "\"Romantic science!\"")),
+        ], sti_risk=0.05),
+    Npc("tad", "Tad", "Runs Nuts & Eggs pet shop", Character("penis", "Tad", "Tan", "Red", "bowtie"),
+        "petshop", (400, 164), 35, daily=[
+            L("Every pet here needs a loving home. Except the sperm. He needs a lot of space to swim.",
+              ("He's cute!", "\"He's VERY fast. Watch your ankles.\""),
+              ("What's the best pet?", "\"Testicles. Always come in pairs, never get lonely.\"")),
+            L("The ovaries learned a new trick! They can wave hello now. Took weeks.",
+              ("Adorable", "\"Right?! I cried a little.\"", None, 5),
+              ("Weird but okay", "\"Weird is our brand.\"")),
+            L("Remember: feed your pet every day. A hungry testicle is a sad testicle.",
+              ("Noted", "\"Good pet parent!\"")),
+        ], sti_risk=0.07),
+    Npc("vee", "Vee", "Owns Birthday Suits boutique", Character("vagina", "Vee", "Ebony", "Black", "sunglasses"),
+        "boutique", (400, 164), 30, daily=[
+            L("Darling, accessories ARE the outfit. Everyone in Genitopia is naked anyway.",
+              ("True", "\"So make it COUNT.\""),
+              ("What would you pick for me?", "She squints. \"Gold chain. Trust me.\"", None, 6)),
+            L("New shipment of cowboy hats! Yeehaw is back in season.",
+              ("Yeehaw!", "\"That's the spirit, cowboy.\"", None, 5),
+              ("Was it ever in season?", "\"In Genitopia? Always.\"")),
+            L("It's {weekday}. You're giving... main character energy today. I love it.",
+              ("Thanks, Vee", "\"Don't thank me, thank your bone structure.\"", None, 7),
+              ("I try", "\"It shows.\"")),
+        ], sti_risk=0.08),
+    Npc("reverend", "Reverend Love", "Genitopia Chapel", Character("penis", "Reverend Love", "Pink", "Gray", "collar"),
+        "chapel", (400, 140), 62, decline="\"Bless you, child, but I'm married to the chapel. Literally. It was a weird ceremony.\"",
+        daily=[
+            L("Love is patient. Love is kind. Love is... very common in Genitopia, apparently.",
+              ("Amen", "\"Amen indeed.\""),
+              ("Too common?", "\"I perform a LOT of weddings.\"")),
+            L("Thinking of tying the knot? Bring your sweetheart and a ring and I'll do the rest.",
+              ("Someday", "\"The chapel will be here.\""),
+              ("How much?", "\"Two hundred dollars and one sincere kiss.\"")),
+            L("Happy {weekday}. I married two Ballers fans last week. They exchanged baseball caps instead of rings.",
+              ("Cute!", "\"Very. A little sweaty.\""),
+              ("Go Ballers!", "\"Go Ballers!\"")),
+        ]),
+    Npc("brick", "Brick", "Trainer at Pump House Gym", Character("penis", "Brick", "Brown", "Black", "headband"),
+        "gym", (520, 300), 28, daily=[
+            L("YO! Ready to get SWOLE? Leg day, arm day, every day is gains day!",
+              ("Let's GO!", "\"THAT'S what I'm talking about!\" He high-fives you way too hard.", None, 5),
+              ("I'm just here for the smoothie", "\"Protein smoothie? RESPECT.\"")),
+            L("Fun fact: confidence is the sexiest muscle. Second sexiest: glutes.",
+              ("Noted", "\"Squats. Do your squats.\""),
+              ("Show me your glutes", "He flexes. Everything flexes.", None, 7)),
+            L("It's {weekday} and I've done 400 push-ups. Before breakfast. I'm hungry.",
+              ("Eat something!", "\"Eating is a workout for your mouth.\""),
+              ("Impressive", "\"I know.\"", None, 4)),
+        ], sti_risk=0.1),
+]
 NPC_BY_KEY = {n.key: n for n in NPCS}
 for _n in NPCS:
     for _i, _ln in enumerate(_n.daily):
@@ -416,6 +515,8 @@ for _i, _ln in enumerate(SHARED_TOPICAL):
 def pick_line(gs: GameState, npc: Npc) -> Line:
     """Topical lines first (each once a day), then today's gossip, then the daily rotation."""
     said = gs.talked_today
+    if gs.partner_key == npc.key and gs.relationship and f"{npc.key}/partner" not in said:
+        return partner_line(gs, npc)
     for ln in npc.topical:
         if ln.cond and ln.cond(gs) and ln.lid not in said:
             return ln
@@ -434,6 +535,8 @@ def pick_line(gs: GameState, npc: Npc) -> Line:
 
 def respond(gs: GameState, npc: Npc, line: Line, reply: Reply) -> None:
     gs.talks[npc.key] = gs.talks.get(npc.key, 0) + 1
+    from .relationships import chat_with_partner
+    chat_with_partner(gs, npc)
     gs.talked_today.add(line.lid)
     if npc.key == "boss" and line.cond:
         gs.affection["boss_bonus"] = 1
@@ -444,9 +547,12 @@ def respond(gs: GameState, npc: Npc, line: Line, reply: Reply) -> None:
 
 
 def npcs_in(room: str, gs: GameState | None = None) -> list[Npc]:
-    out = [n for n in NPCS if n.room == room]
-    if gs is not None and gs.date is not None and gs.date_place == "home":
-        out = [n for n in out if n.name != gs.date.name]     # they're at your place
+    if gs is None:
+        return [n for n in NPCS if n.room == room]
+    spouse = gs.partner_key if gs.relationship == "married" and gs.is_night_time else None
+    out = [n for n in NPCS if (n.room == room and n.key != spouse) or (room == "home" and n.key == spouse)]
+    if gs.date is not None and gs.date_place == "home":
+        out = [n for n in out if n.name != gs.date.name]     # they're waiting in your bedroom
     return out
 
 
@@ -465,6 +571,9 @@ def stage(gs, npc: Npc) -> str:
     a = affection(gs, npc)
     if npc.decline:
         return "Friendly"
+    if gs.partner_key == npc.key and gs.relationship:
+        from .relationships import title
+        return title(npc, gs.relationship).capitalize()
     return "Stranger" if a < 15 else "Friend" if a < 35 else "Crush" if a < 65 else "Dating"
 
 

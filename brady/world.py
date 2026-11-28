@@ -87,10 +87,10 @@ def _spot(key, rect, title, pad=55, npc="", upgrade=""):
 
 
 # ---- town -------------------------------------------------------------------
-TOWN_SIZE = (2600, 2500)
-ROADS = [Rect(0, 760, 2600, 120), Rect(0, 1640, 2600, 120), Rect(1240, 0, 120, 2500)]
-SIDEWALKS = [Rect(0, 732, 2600, 28), Rect(0, 880, 2600, 28), Rect(0, 1612, 2600, 28), Rect(0, 1760, 2600, 28),
-             Rect(1212, 0, 28, 2500), Rect(1360, 0, 28, 2500)]
+TOWN_SIZE = (3500, 2500)
+ROADS = [Rect(0, 760, 3500, 120), Rect(0, 1640, 3500, 120), Rect(1240, 0, 120, 2500), Rect(2640, 0, 120, 2500)]
+SIDEWALKS = [Rect(0, 732, 3500, 28), Rect(0, 880, 3500, 28), Rect(0, 1612, 3500, 28), Rect(0, 1760, 3500, 28),
+             Rect(1212, 0, 28, 2500), Rect(1360, 0, 28, 2500), Rect(2612, 0, 28, 2500), Rect(2760, 0, 28, 2500)]
 
 BUILDINGS = [
     Building("home", "Home", Rect(200, 300, 360, 320), (200, 170, 140), (120, 70, 60), "bottom"),
@@ -107,20 +107,32 @@ BUILDINGS = [
     Building("ballpark", "Ballers Stadium", Rect(420, 1880, 700, 520), (205, 200, 190), (40, 90, 160), "top"),
     Building("hardware", "Screw & Nail", Rect(1880, 1880, 380, 280), (190, 160, 120), (210, 110, 40), "top",
              (230, 120, 40)),
+    Building("jeweler", "Rock Solid", Rect(2840, 380, 280, 240), (70, 68, 90), (200, 160, 60), "bottom",
+             (40, 40, 60)),
+    Building("florist", "Petal Pushers", Rect(3180, 380, 280, 240), (245, 230, 235), (220, 120, 160), "bottom",
+             (230, 130, 170)),
+    Building("petshop", "Nuts & Eggs", Rect(2840, 1000, 300, 260), (240, 220, 170), (90, 160, 200), "top",
+             (90, 170, 210)),
+    Building("boutique", "Birthday Suits", Rect(3180, 1000, 280, 260), (40, 38, 46), (230, 80, 140), "top",
+             (230, 80, 140)),
+    Building("chapel", "Genitopia Chapel", Rect(2840, 1880, 320, 380), (248, 246, 240), (120, 90, 160), "top"),
+    Building("gym", "Pump House Gym", Rect(3200, 1880, 260, 300), (85, 85, 95), (210, 60, 50), "top"),
 ]
 BUILDING_BY_KEY = {b.key: b for b in BUILDINGS}
 
 TREES = [(120, 120), (640, 160), (1120, 220), (1980, 140), (2480, 260), (1140, 620), (2480, 640),
          (120, 1500), (700, 1460), (1150, 1120), (1420, 1560), (1920, 1580), (2520, 1580),
          (1110, 1580), (980, 120), (2440, 1250), (200, 2000), (220, 2380), (1600, 1980), (1640, 2380),
-         (2460, 1960), (2440, 2380), (1180, 2300)]
+         (2460, 1960), (2440, 2380), (1180, 2300), (3460, 160), (2860, 690), (3440, 690), (2860, 1500),
+         (3200, 1520), (3460, 1480), (2820, 2420), (3460, 2420)]
 FOUNTAIN = (1660, 1500, 70)       # x, y, radius
 BENCHES = [(1560, 1430), (1760, 1430), (640, 922)]
-LAMPS = ([(x, 730) for x in range(160, 2600, 320)] + [(x, 910) for x in range(320, 2600, 320)]
-         + [(x, 1610) for x in range(160, 2600, 320)] + [(x, 1790) for x in range(320, 2600, 320)])
+LAMPS = ([(x, 730) for x in range(160, 3500, 320)] + [(x, 910) for x in range(320, 3500, 320)]
+         + [(x, 1610) for x in range(160, 3500, 320)] + [(x, 1790) for x in range(320, 3500, 320)])
 FLOWERBEDS = [Rect(220, 630, 90, 22), Rect(450, 630, 90, 22), Rect(2040, 630, 80, 22),
               Rect(2220, 630, 80, 22), Rect(1520, 972, 90, 22), Rect(1730, 972, 90, 22),
-              Rect(1900, 1852, 90, 22), Rect(2150, 1852, 90, 22)]
+              Rect(1900, 1852, 90, 22), Rect(2150, 1852, 90, 22), Rect(2860, 630, 80, 22),
+              Rect(3200, 630, 80, 22), Rect(3360, 630, 80, 22), Rect(2860, 1852, 80, 22), Rect(3080, 1852, 80, 22)]
 WELCOME_SIGN = Rect(40, 640, 150, 70)
 
 
@@ -285,8 +297,49 @@ def _hardware():
     ], [_spot("hardware", counter, "Screw & Nail", npc="mandy")])
 
 
-ROOMS = {r.key: r for r in (_home(), _club(), _diner(), _office(), _pharmacy(), _clinic(), _studio(), _apartment(),
-                            _ballpark(), _hardware())}
+def _shop(key, name, floor, wall, counter_kind, spot_title, npc, displays):
+    counter = Rect(150, 150, 500, 56)
+    return Room(key, name, (800, 560), floor, wall, (400, 450), [
+        Furniture(counter, counter_kind, occlude=True),
+        *[F(x, y, w, h, kind) for x, y, w, h, kind in displays],
+    ], [_spot(key, counter, spot_title, npc=npc)])
+
+
+def _chapel():
+    altar = Rect(330, 110, 240, 50)
+    pews = [F(x, y, 300, 40, "pew") for y in range(260, 560, 80) for x in (80, 520)]
+    return Room("chapel", "Genitopia Chapel", (900, 700), "carpet_aisle", (240, 235, 225), (450, 640), [
+        F(400, 64, 100, 600, "aisle", solid=False),
+        Furniture(altar, "altar", occlude=True),
+        F(120, 70, 60, 120, "stainedglass", solid=False),
+        F(720, 70, 60, 120, "stainedglass", solid=False),
+        *pews,
+    ], [_spot("chapel", altar, "Genitopia Chapel", 60, npc="reverend")])
+
+
+def _gym():
+    rack = Rect(80, 120, 200, 130)
+    return Room("gym", "Pump House Gym", (900, 600), "rubber", (200, 200, 205), (450, 520), [
+        Furniture(rack, "gym"),
+        F(600, 120, 220, 130, "gym"),
+        F(120, 360, 90, 160, "treadmill"),
+        F(260, 360, 90, 160, "treadmill"),
+        F(700, 380, 140, 80, "bench"),
+        F(360, 20, 180, 34, "mirrorwall", solid=False),
+    ], [_spot("workout", rack, "Weights", 55), _spot("workout2", Rect(600, 120, 220, 130), "Weights", 55)])
+
+
+ROOMS = {r.key: r for r in (
+    _home(), _club(), _diner(), _office(), _pharmacy(), _clinic(), _studio(), _apartment(), _ballpark(), _hardware(),
+    _shop("jeweler", "Rock Solid Jewelers", "tile", (40, 40, 52), "counter_glass", "Rock Solid Jewelers", "goldie",
+          [(60, 300, 170, 70, "jewelcase"), (570, 300, 170, 70, "jewelcase"), (170, 18, 460, 60, "shelf_back")]),
+    _shop("florist", "Petal Pushers", "wood", (235, 245, 230), "counter_green", "Petal Pushers", "fern",
+          [(60, 290, 140, 140, "flowers"), (600, 290, 140, 140, "flowers"), (330, 330, 140, 100, "flowers")]),
+    _shop("petshop", "Nuts & Eggs", "lino", (235, 240, 215), "counter_orange", "Nuts & Eggs pet shop", "tad",
+          [(60, 280, 150, 120, "petcage"), (325, 300, 150, 110, "petcage"), (590, 280, 150, 120, "petcage")]),
+    _shop("boutique", "Birthday Suits", "dark", (60, 40, 60), "counter_pink", "Birthday Suits boutique", "vee",
+          [(60, 280, 60, 190, "rack"), (680, 280, 60, 190, "rack"), (340, 300, 120, 30, "mirrorwall")]),
+    _chapel(), _gym())}
 for _room in ROOMS.values():
     w, h = _room.size
     _room.hotspots.append(Hotspot("exit", Rect(w // 2 - 70, h - 60, 140, 60), "Exit"))

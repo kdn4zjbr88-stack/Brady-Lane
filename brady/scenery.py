@@ -256,8 +256,16 @@ def _building(s, b: Building):
             col = b.awning if (i // 14) % 2 == 0 else (245, 240, 235)
             grad(s, (aw.x + i, aw.y, 14, aw.h), shade(col, 1.1), shade(col, 0.8))
         alpha_rect(s, (0, 0, 0, 60), (aw.x, aw.bottom, aw.w, 6))
+    if b.key == "chapel":                       # little bell tower with a heart on top
+        tower = pygame.Rect(r.centerx - 30, roof_r.y - 6, 60, roof_r.h)
+        grad(s, tower, (250, 248, 242), (210, 205, 195), 6)
+        pygame.draw.polygon(s, shade(b.roof, 1.1), [(tower.x - 8, tower.y + 4), (tower.centerx, tower.y - 50), (tower.right + 8, tower.y + 4)])
+        pygame.draw.circle(s, (225, 70, 110), (tower.centerx - 6, tower.y - 56), 7)
+        pygame.draw.circle(s, (225, 70, 110), (tower.centerx + 6, tower.y - 56), 7)
+        pygame.draw.polygon(s, (225, 70, 110), [(tower.centerx - 13, tower.y - 53), (tower.centerx + 13, tower.y - 53), (tower.centerx, tower.y - 38)])
+        pygame.draw.circle(s, (220, 190, 100), (tower.centerx, tower.centery + 6), 12)
     sign = pygame.Rect(0, 0, min(r.w - 30, 30 + len(b.name) * 13), 30)
-    sign.center = roof_r.center
+    sign.center = roof_r.center if b.key != "chapel" else (roof_r.centerx, roof_r.bottom - 22)
     soft_shadow(s, sign, (3, 4), 70, 8, 2)
     grad(s, sign, (45, 40, 50), (25, 22, 30), 8)
     t = font(18).render(b.name, True, (250, 245, 235))
@@ -429,6 +437,12 @@ def _floor(s, room: Room, rng):
         for x in range(0, w, 60):
             alpha_rect(s, (255, 255, 255, 14) if (x // 60) % 2 else (0, 0, 0, 10), (x, 0, 60, h))
         noise(s, (0, 0, w, h), (80, 150, 75), 0.08, w * h // 40, rng, (0.5, 1.4))
+    elif kind == "carpet_aisle":
+        s.fill((225, 215, 200))
+        noise(s, (0, 0, w, h), (225, 215, 200), 0.04, w * h // 30, rng, (0.6, 1.4))
+    elif kind == "rubber":
+        s.fill((55, 58, 64))
+        noise(s, (0, 0, w, h), (60, 63, 70), 0.15, w * h // 20, rng, (0.5, 1.2))
     elif kind == "dark":
         s.fill((48, 46, 52))
         noise(s, (0, 0, w, h), (55, 52, 60), 0.12, w * h // 25, rng, (0.5, 1.3))
@@ -453,6 +467,20 @@ def _pillow(s, r):
 
 def paint_furniture(s, kind, r, rng):
     r = pygame.Rect(r)
+    if kind == "aisle":
+        grad(s, r, (180, 30, 50), (140, 20, 40))
+        for y in range(r.y, r.bottom, 14):
+            alpha_rect(s, (255, 255, 255, 10), (r.x, y, r.w, 2))
+        return
+    if kind == "stainedglass":
+        pygame.draw.rect(s, (90, 80, 70), r.inflate(8, 8), border_radius=30)
+        for i, c in enumerate([(220, 60, 80), (60, 120, 220), (250, 200, 60), (90, 180, 110)]):
+            grad(s, (r.x, r.y + i * r.h // 4, r.w, r.h // 4), shade(c, 1.2), shade(c, 0.8))
+        return
+    if kind == "mirrorwall":
+        grad(s, r, (215, 235, 245), (160, 190, 210), 4)
+        pygame.draw.line(s, (245, 252, 255), (r.x + 20, r.bottom - 4), (r.x + 40, r.y + 4), 3)
+        return
     if kind in ("tilefloor", "rug", "dancefloor", "menuboard", "whiteboard", "shelf_back"):
         if kind == "tilefloor":
             pygame.draw.rect(s, (190, 198, 204), r)
@@ -723,6 +751,51 @@ def paint_furniture(s, kind, r, rng):
             c = rng.choice([(200, 60, 50), (240, 190, 50), (60, 120, 200), (90, 90, 100)])
             pygame.draw.rect(s, c, (x, r.y + 10, 8, 30), border_radius=2)
             pygame.draw.rect(s, (180, 185, 195), (x - 4, r.y + 38, 16, 8), border_radius=2)
+    elif kind in ("counter_glass", "counter_pink"):
+        base = (60, 60, 80) if kind == "counter_glass" else (230, 90, 150)
+        grad(s, r, shade(base, 1.0), shade(base, 0.65), 8)
+        alpha_rect(s, (200, 230, 250, 110) if kind == "counter_glass" else (255, 255, 255, 60), (r.x + 6, r.y + 4, r.w - 12, 20), 6)
+        if kind == "counter_glass":
+            for i in range(8):
+                ball(s, (240, 210, 90) if i % 2 else (210, 230, 250), (r.x + 40 + i * 58, r.y + 14), 5, steps=4)
+    elif kind == "jewelcase":
+        grad(s, r, (50, 48, 62), (30, 28, 40), 8)
+        alpha_rect(s, (200, 230, 250, 90), r.inflate(-10, -10), 6)
+        for i in range(6):
+            x = r.x + 18 + i * (r.w - 36) // 5
+            pygame.draw.circle(s, (235, 200, 80), (x, r.centery + 4), 8, 3)
+            ball(s, (220, 240, 255), (x, r.centery - 5), 4, steps=3)
+    elif kind == "flowers":
+        grad(s, (r.x + 10, r.centery, r.w - 20, r.h // 2), (150, 110, 80), (110, 78, 55), 8)
+        fr = random.Random(r.x)
+        for _ in range(26):
+            x, y = fr.randint(r.x + 12, r.right - 12), fr.randint(r.y + 6, r.centery + 8)
+            pygame.draw.circle(s, (70, 130, 60), (x, y + 6), 5)
+            ball(s, fr.choice([(230, 60, 90), (250, 210, 80), (250, 250, 250), (200, 120, 230), (250, 140, 60)]), (x, y), 7, steps=4)
+    elif kind == "petcage":
+        grad(s, r, (200, 205, 215), (160, 165, 175), 8)
+        grad(s, r.inflate(-12, -12), (240, 235, 210), (215, 205, 175), 6)
+        for x in range(r.x + 4, r.right, 12):
+            pygame.draw.line(s, (150, 155, 165), (x, r.y + 2), (x, r.bottom - 2), 2)
+    elif kind == "rack":
+        pygame.draw.rect(s, (180, 180, 190), (r.centerx - 3, r.y, 6, r.h), border_radius=3)
+        for i in range(7):
+            c = [(230, 80, 140), (80, 200, 220), (250, 220, 80), (40, 40, 46), (250, 250, 250)][i % 5]
+            grad(s, (r.x + 4, r.y + 8 + i * 26, r.w - 8, 22), shade(c, 1.1), shade(c, 0.8), 6)
+    elif kind == "pew":
+        grad(s, r, (140, 95, 60), (100, 68, 42), 8)
+        grad(s, (r.x, r.y, r.w, 12), (160, 112, 74), (120, 82, 54), 6)
+    elif kind == "altar":
+        grad(s, r, (250, 248, 240), (215, 210, 200), 8)
+        grad(s, (r.x, r.y, r.w, 12), (220, 190, 110), (190, 155, 80), 6)
+        for x in (r.x + 24, r.right - 24):
+            pygame.draw.rect(s, (250, 245, 225), (x - 4, r.y - 22, 8, 22), border_radius=2)
+            pygame.draw.circle(s, (255, 200, 80), (x, r.y - 26), 5)
+    elif kind == "treadmill":
+        grad(s, r, (60, 62, 70), (35, 36, 42), 12)
+        grad(s, r.inflate(-24, -40).move(0, 10), (30, 30, 34), (20, 20, 24), 6)
+        grad(s, (r.x + 10, r.y + 6, r.w - 20, 20), (90, 95, 105), (60, 62, 70), 6)
+        pygame.draw.rect(s, (90, 200, 120), (r.centerx - 14, r.y + 11, 28, 8), border_radius=2)
     elif kind == "dresser":
         grad(s, r, (150, 105, 70), (105, 72, 48), 6)
         for i in range(2):

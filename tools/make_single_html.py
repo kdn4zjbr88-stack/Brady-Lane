@@ -51,6 +51,19 @@ shim = f"""<script>
 </script>
 """
 
+# Keep the game at 16:9 and as big as the window allows (the stock template stretches it).
+fit_css = """<style>
+html, body { background: #120e18 !important; margin: 0; overflow: hidden; }
+canvas.emscripten#canvas {
+  width: min(100vw, calc(100vh * 16 / 9)) !important;
+  height: min(100vh, calc(100vw * 9 / 16)) !important;
+  top: 50% !important; left: 50% !important; right: auto !important; bottom: auto !important;
+  transform: translate(-50%, -50%); margin: 0 !important;
+}
+</style>
+"""
+html = html.replace("</head>", fit_css + "</head>", 1)
+
 head = html.find("<head>")
 if head == -1:
     raise SystemExit("index.html has no <head>")

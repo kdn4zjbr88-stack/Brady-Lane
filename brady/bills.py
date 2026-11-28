@@ -16,7 +16,8 @@ class Bill:
 
     def amount(self, gs) -> int:
         extra = 6 * len(gs.upgrades) if self.key == "utilities" else 0
-        return self.base + extra + (LATE_FEE if self.late else 0)
+        base = self.base // 2 if self.key == "rent" and gs.relationship == "married" else self.base
+        return base + extra + (LATE_FEE if self.late else 0)
 
     def overdue(self, gs) -> int:
         return max(0, gs.day - self.due_day)

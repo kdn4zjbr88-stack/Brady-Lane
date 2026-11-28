@@ -3,20 +3,23 @@ from __future__ import annotations
 
 import asyncio
 import math
+import sys
 import random
 from dataclasses import dataclass, field
 from typing import Callable
 
 import pygame
 
-from . import actions, baseball, bills, cycle, events, jobs, npcs, scenery, upgrades
-from .art import draw_baby, draw_character, shade
+from . import actions, baseball, bills, cycle, events, jobs, npcs, pets, relationships, scenery, shops, upgrades
+from .art import draw_baby, draw_character, draw_pet, shade
 from .model import (BABY_ACCESSORIES, BODY_COLORS, CHARACTER_TYPES, GAME_LENGTH_DAYS, HAIR_COLORS,
                     ONESIE_COLORS, PIERCINGS, SWIPES_PER_DAY, TOWN_NAME, Character, GameState, Partner,
                     piercing_label)
 from .world import BUILDING_BY_KEY, BUILDINGS, ROOMS, TOWN_SIZE, Hotspot, town_solids
 
-W, H = 1100, 720
+W, H = 1280, 720          # 16:9 widescreen (matches the browser canvas, scales to fullscreen)
+OX = (W - 1100) // 2
+SPOUSE_SPOT = (560, 480)   # where your spouse hangs out at home in the evening      # centres the menu screens that were laid out for 1100px
 BG = (24, 20, 32)
 PANEL = (48, 42, 62)
 TEXT = (240, 234, 246)
@@ -141,7 +144,8 @@ class App:
     def __init__(self, seed=None):
         pygame.init()
         pygame.display.set_caption(f"Brady: {TOWN_NAME}")
-        self.screen = pygame.display.set_mode((W, H))
+        flags = 0 if sys.platform == "emscripten" else pygame.SCALED | pygame.RESIZABLE
+        self.screen = pygame.display.set_mode((W, H), flags)
         self.clock = pygame.time.Clock()
         self.seed = seed
         self.char = Character()
@@ -158,11 +162,11 @@ class App:
     def setup_buttons(self):
         btns = {}
         for i, kind in enumerate(CHARACTER_TYPES):
-            btns[("kind", kind)] = Button((190 + i * 380, 120, 340, 350), "", color=(40, 34, 52))
+            btns[("kind", kind)] = Button((OX + 190 + i * 380, 120, 340, 350), "", color=(40, 34, 52))
         for i, name in enumerate(BODY_COLORS):
-            btns[("body", name)] = Button((300 + i * 108, 492, 98, 38), name)
+            btns[("body", name)] = Button((OX + 300 + i * 108, 492, 98, 38), name)
         for i, name in enumerate(HAIR_COLORS):
-            btns[("hair", name)] = Button((300 + i * 108, 546, 98, 38), name)
+            btns[("hair", name)] = Button((OX + 300 + i * 108, 546, 98, 38), name)
         btns[("start",)] = Button((W // 2 - 120, 630, 240, 58), f"Move to {TOWN_NAME}", color=(150, 55, 100))
         return btns
 
@@ -193,7 +197,7 @@ class App:
                 b.draw(self.screen, mouse)
         for y, txt in ((511, "Skin"), (565, "Hair")):
             t = F(18).render(txt, True, MUTED)
-            self.screen.blit(t, t.get_rect(midright=(285, y)))
+            self.screen.blit(t, t.get_rect(midright=(OX + 285, y)))
         name = F(18).render(f"Name: {self.char.name}_   (type to rename)", True, TEXT)
         self.screen.blit(name, name.get_rect(midleft=(30, 660)))
 
@@ -225,6 +229,7 @@ class App:
         self.room = "town"
         self.me = Walker(*BUILDING_BY_KEY["home"].outside_spot)
         self.bb = Walker(self.me.x - 40, self.me.y)
+        self.pw = [Walker(self.me.x + 40, self.me.y), Walker(self.me.x + 80, self.me.y)]
         self.goers: list[ClubGoer] = []
         self.popup: Popup | None = None
         self.phone_open = False
@@ -239,8 +244,8 @@ class App:
                 ("accessory", list(BABY_ACCESSORIES))]
         for r, (field_, values) in enumerate(rows):
             for i, v in enumerate(values):
-                btns[(field_, v)] = Button((470 + i * 112, 190 + r * 70, 104, 40), v)
-        btns[("done",)] = Button((610, 600, 240, 56), "Welcome, baby!", color=(150, 55, 100))
+                btns[(field_, v)] = Button((OX + 470 + i * 112, 190 + r * 70, 104, 40), v)
+        btns[("done",)] = Button((OX + 610, 600, 240, 56), "Welcome, baby!", color=(150, 55, 100))
         return btns
 
     def draw_baby_setup(self, mouse):
@@ -250,7 +255,7 @@ class App:
         s = F(17, False).render("Make them yours. They'll follow you everywhere (except the club).", True, MUTED)
         self.screen.blit(s, s.get_rect(center=(W // 2, 92)))
         d = self.draft
-        card = pygame.Rect(60, 140, 360, 460)
+        card = pygame.Rect(OX + 60, 140, 360, 460)
         panel(self.screen, card, 180, 24)
         preview = self.preview_baby()
         draw_baby(self.screen, preview, (card.centerx, card.bottom - 90), 2.6, self.ticks)
@@ -263,9 +268,9 @@ class App:
                 b.draw(self.screen, mouse, selected=getattr(d, key[0]) == key[1])
         for r, label in enumerate(("Skin", "Hair", "Onesie", "Extra")):
             t = F(18).render(label, True, MUTED)
-            self.screen.blit(t, t.get_rect(midright=(455, 210 + r * 70)))
+            self.screen.blit(t, t.get_rect(midright=(OX + 455, 210 + r * 70)))
         hint = F(16, False).render("Type the baby's name on your keyboard", True, MUTED)
-        self.screen.blit(hint, hint.get_rect(midleft=(470, 500)))
+        self.screen.blit(hint, hint.get_rect(midleft=(OX + 470, 500)))
 
     def preview_baby(self):
         from .model import Baby
@@ -299,6 +304,44 @@ class App:
         self.bb.x, self.bb.y = self.me.x - 40, self.me.y
         self.scene = "world"
 
+    # ================================================================ pet naming
+    def draw_pet_name(self, mouse):
+        self.backdrop()
+        ne = self.name_entry
+        t = F(40).render(ne["title"], True, ACCENT)
+        self.screen.blit(t, t.get_rect(center=(W // 2, 80)))
+        card = pygame.Rect(W // 2 - 200, 140, 400, 330)
+        panel(self.screen, card, 180, 24)
+        draw_pet(self.screen, ne["kind"], (card.centerx, card.bottom - 70), 2.2, self.ticks, True)
+        nm = F(28).render(ne["name"] or "(type a name)", True, TEXT if ne["name"] else MUTED)
+        self.screen.blit(nm, nm.get_rect(center=(W // 2, 520)))
+        hint = F(16, False).render("Type a name and press Enter (or leave it blank to keep the shop's name)", True, MUTED)
+        self.screen.blit(hint, hint.get_rect(center=(W // 2, 560)))
+        Button((W // 2 - 110, 610, 220, 56), "Done", color=(150, 55, 100)).draw(self.screen, mouse)
+
+    def finish_pet_name(self):
+        name = self.name_entry["name"].strip()
+        if name:
+            self.gs.pets[-1].name = name
+        p = self.gs.pets[-1]
+        self.gs.say(f"Welcome home, {p.name}! Press B to feed and play with your pet.")
+        i = len(self.gs.pets) - 1
+        self.pw[i].x, self.pw[i].y = self.me.x + 40, self.me.y + 8
+        self.scene = "world"
+
+    def key_pet_name(self, e):
+        ne = self.name_entry
+        if e.key == pygame.K_BACKSPACE:
+            ne["name"] = ne["name"][:-1]
+        elif e.key == pygame.K_RETURN:
+            self.finish_pet_name()
+        elif e.unicode and e.unicode.isprintable() and len(ne["name"]) < 16:
+            ne["name"] += e.unicode
+
+    def click_pet_name(self, pos):
+        if pygame.Rect(W // 2 - 110, 610, 220, 56).collidepoint(pos):
+            self.finish_pet_name()
+
     # ================================================================ world: geometry
     def room_size(self):
         return TOWN_SIZE if self.room == "town" else ROOMS[self.room].size
@@ -329,7 +372,11 @@ class App:
             return spots + [Hotspot(f"door:{b.key}", b.door_zone, b.name) for b in BUILDINGS]
         spots = ROOMS[self.room].spots(self.gs.upgrades)
         spots = [Hotspot(f"talk:{n.key}", pygame.Rect(n.pos[0] - 55, n.pos[1] - 50, 110, 90), n.name)
-                 for n in npcs.npcs_in(self.room, self.gs) if n.key == "coach"] + spots
+                 for n in npcs.npcs_in(self.room, self.gs) if n.key in ("coach", "brick")] + spots
+        spouse = relationships.npc(self.gs)
+        if self.room == "home" and spouse and spouse in npcs.npcs_in("home", self.gs):
+            x, y = SPOUSE_SPOT
+            spots = [Hotspot(f"talk:{spouse.key}", pygame.Rect(x - 55, y - 50, 110, 90), spouse.name)] + spots
         if self.room == "club":
             spots = [Hotspot(f"goer:{i}", pygame.Rect(g.x - 55, g.y - 55, 110, 110), g.partner.name)
                      for i, g in enumerate(self.goers)] + spots
@@ -372,18 +419,22 @@ class App:
             self.popup = None
 
     def follow_baby(self, dt):
-        if not self.gs.baby_with_you:
-            return
-        tx, ty = self.me.x - 38, self.me.y + 4
-        d = math.hypot(tx - self.bb.x, ty - self.bb.y)
-        if d > 30:
-            step = min(d - 20, SPEED * 0.95 * dt)
-            self.bb.x += (tx - self.bb.x) / d * step
-            self.bb.y += (ty - self.bb.y) / d * step
-            self.bb.dist += step
-            self.bb.moving = True
-        else:
-            self.bb.moving = False
+        followers = []
+        if self.gs.baby_with_you:
+            followers.append((self.bb, (-38, 4)))
+        for i, _ in enumerate(self.gs.pets):
+            followers.append((self.pw[i], (36 + i * 34, 8 + i * 6)))
+        for w, (ox_, oy_) in followers:
+            tx, ty = self.me.x + ox_, self.me.y + oy_
+            d = math.hypot(tx - w.x, ty - w.y)
+            if d > 30:
+                step = min(d - 20, SPEED * 0.95 * dt)
+                w.x += (tx - w.x) / d * step
+                w.y += (ty - w.y) / d * step
+                w.dist += step
+                w.moving = True
+            else:
+                w.moving = False
 
     def current_spot(self) -> Hotspot | None:
         for h in self.hotspots():
@@ -396,6 +447,8 @@ class App:
         self.popup = None
         self.me.x, self.me.y = pos if room == "town" else ROOMS[room].spawn
         self.bb.x, self.bb.y = self.me.x - 40, self.me.y + 4
+        for i, w in enumerate(self.pw):
+            w.x, w.y = self.me.x + 40 + i * 34, self.me.y + 8
         if room == "club":
             rng = self.gs.rng
             anat = None if self.gs.show_me == "everyone" else self.gs.show_me
@@ -449,9 +502,32 @@ class App:
         if not n.decline and aff >= 65:
             opts.append(Option("Come over tonight?", "Meet at your place" if gs.is_night_time else "Ask in the evening",
                                romance(npcs.invite_home) if gs.is_night_time else None))
+        if any(v > 0 for v in gs.gifts.values()):
+            opts.append(Option("Give a gift", ", ".join(k for k, v in gs.gifts.items() if v > 0),
+                               lambda: self.gift_menu(n)))
+        if not n.decline and aff >= 65 and not gs.partner_key:
+            word = "boyfriend" if n.look.kind == "penis" else "girlfriend"
+            opts.append(Option(f"Be my {word}?", "Make it official", romance(relationships.ask_out)))
+        if relationships.is_partner(gs, n) and gs.relationship == "dating":
+            opts.append(Option("Propose", "On one knee" if gs.has_ring else "Buy a ring at Rock Solid first",
+                               romance(relationships.propose) if gs.has_ring else None))
         status = "" if n.decline else f" · {npcs.stage(gs, n)} {aff}/100"
         self.popup = Popup(f"{n.name}{status}", opts, anchor=spot.zone if spot else None,
                            text=f"\"{npcs.say(line.text, gs)}\"")
+
+    def gift_menu(self, n):
+        gs = self.gs
+        spot = self.current_spot()
+
+        def give(g):
+            def run():
+                self.popup = None
+                self.do(relationships.give_gift, n, g)()
+            return run
+
+        self.popup = Popup(f"Give {n.name.split()[0]} a gift", [
+            Option(f"{g} (x{c})", f"+{relationships.GIFTS[g][1]} affection", give(g))
+            for g, c in gs.gifts.items() if c > 0], anchor=spot.zone if spot else None)
 
     def chat_option(self, spot):
         if not spot.npc:
@@ -582,12 +658,54 @@ class App:
                                 self.do(A.buy_supplies)),
                          Option("Painkillers x3", f"${A.PAINKILLER_PRICE} · for cramps", self.do(A.buy_painkillers))]
             return Popup("Pharmacy", opts + self.job_options("pharmacy") + self.chat_option(spot))
+        if key == "jeweler":
+            return Popup("Rock Solid Jewelers", [
+                Option("Engagement ring", f"${relationships.RING_PRICE} · for proposing" if not gs.has_ring else "You have one",
+                       self.do(relationships.buy_ring) if not gs.has_ring else None),
+                Option("Necklace (gift)", f"${relationships.GIFTS['Necklace'][0]} · +25 affection",
+                       self.do(relationships.buy_gift, "Necklace")),
+                *self.chat_option(spot)])
+        if key == "florist":
+            return Popup("Petal Pushers", [
+                Option(f"{g} (gift)", f"${p} · +{a} affection", self.do(relationships.buy_gift, g))
+                for g, (p, a, shop) in relationships.GIFTS.items() if shop == "florist"] + self.chat_option(spot))
+        if key == "petshop":
+            opts = [Option(f"Adopt: pet {k}", f"${p} · {blurb}", lambda k=k: self.adopt_pet(k))
+                    for k, (p, blurb) in pets.PET_KINDS.items()]
+            opts.append(Option("Pet food x3", f"${pets.FOOD_PRICE} · you have {gs.pet_food}", self.do(pets.buy_food)))
+            return Popup("Nuts & Eggs pet shop", opts + self.chat_option(spot))
+        if key == "boutique":
+            opts = []
+            for k, (label, charm, price) in shops.ACCESSORIES.items():
+                if k in gs.wardrobe:
+                    sub = "Wearing · click to take off" if gs.wearing == k else f"Owned · +{charm} charm"
+                    opts.append(Option(("Take off " if gs.wearing == k else "Wear ") + label, sub,
+                                       self.do(shops.buy_or_wear, k)))
+                else:
+                    opts.append(Option(label, f"${price} · +{charm} charm", self.do(shops.buy_or_wear, k)))
+            return Popup("Birthday Suits boutique", opts + self.chat_option(spot))
+        if key == "chapel":
+            partner = relationships.npc(gs)
+            if gs.relationship == "engaged" and partner:
+                opts = [Option(f"Marry {partner.name}!", f"${relationships.WEDDING_PRICE} · the big day",
+                               self.do(relationships.wedding))]
+            elif gs.relationship == "married":
+                opts = [Option("You're married!", f"to {partner.name}" if partner else "", None)]
+            else:
+                opts = [Option("Get married", "Get engaged first: date, go steady, buy a ring, propose", None)]
+            return Popup("Genitopia Chapel", opts + self.chat_option(spot))
+        if key in ("workout", "workout2"):
+            sub = "Free (you work here)" if gs.job == "trainer" else f"${shops.GYM_PRICE} day pass"
+            return Popup("Pump House Gym", [Option("Work out", f"{sub} · +Fitness", self.do(shops.gym_workout)),
+                                            *self.job_options("gym")])
         if key == "clinic":
             opts = []
             if gs.in_labor:
                 opts.append(Option("Deliver the baby!", "Free at Genitopia General", self.do(A.deliver_at_clinic)))
             elif gs.conception and gs.conception.revealed and gs.is_carrier:
                 opts.append(Option("Prenatal checkup", f"${A.CHECKUP_PRICE} · +Health", self.do(A.prenatal_checkup)))
+                opts.append(Option("Talk about ending the pregnancy", "Private and judgement-free",
+                                   self.pregnancy_options))
             opts.append(Option("STI test & treatment", f"${A.CLINIC_PRICE}", self.do(A.clinic)))
             return Popup("Dr. Ova", opts + self.chat_option(spot))
         if key == "studio":
@@ -637,6 +755,28 @@ class App:
             return self.frisky(p, "apartments")
         return None
 
+    def pregnancy_options(self):
+        gs, A = self.gs, actions
+        spot = self.current_spot()
+        d = gs.pregnancy_days
+        opts = []
+        for method, label, price, ok in A.abortion_options(gs):
+            limit = A.PILL_MAX_DAYS if method == "pill" else A.PROCEDURE_MAX_DAYS
+            opts.append(Option(label, f"${price} · up to day {limit}" if ok else "Too far along for this option",
+                               self.close_after(self.do(A.abortion, method)) if ok else None))
+        opts.append(Option("Keep the pregnancy", "Close", self.close_after(lambda: None)))
+        self.popup = Popup("Your options", opts, anchor=spot.zone if spot else None,
+                           text=f"Dr. Ova: \"You're about {d} day{'s' * (d != 1)} along. Whatever you decide is "
+                                "your choice, and I'll support you. You'll need a day or two of rest afterwards.\"")
+
+    def adopt_pet(self, kind):
+        err = pets.buy(self.gs, kind)
+        if err:
+            return self.show_toast(err)
+        self.name_entry = {"title": f"Name your pet {kind}", "kind": kind, "name": ""}
+        self.popup = None
+        self.scene = "pet_name"
+
     def ask_finish(self):
         gs, p = self.gs, self.gs.date
         if gs.energy < 15:
@@ -660,16 +800,25 @@ class App:
         return run
 
     def baby_menu(self):
-        b = self.gs.baby
-        if not b:
-            return self.show_toast("You don't have a baby.")
-        if b.in_crib:
-            return self.show_toast(f"{b.name} is in the crib at home.")
-        self.popup = Popup(f"{b.name}", [
-            Option("Feed a bottle", f"{self.gs.formula} bottles left",
-                   self.close_after(self.do(actions.feed_baby)) if self.gs.formula else None),
-            Option("Cuddle", "+Baby happiness, +Mood", self.close_after(self.do(actions.cuddle_baby))),
-        ], text=f"Fed {int(b.fullness)} · Happy {int(b.happiness)}" + ("  · CRYING" if b.crying else ""))
+        """B: look after the baby and pets."""
+        gs, A = self.gs, actions
+        opts, info = [], []
+        b = gs.baby
+        if b and not b.in_crib:
+            opts += [Option(f"Feed {b.name}", f"{gs.formula} bottles left",
+                            self.close_after(self.do(A.feed_baby)) if gs.formula else None),
+                     Option(f"Cuddle {b.name}", "+Baby happiness, +Mood", self.close_after(self.do(A.cuddle_baby)))]
+            info.append(f"{b.name}: fed {int(b.fullness)}, happy {int(b.happiness)}" + (" (CRYING)" if b.crying else ""))
+        elif b:
+            info.append(f"{b.name} is in the crib at home.")
+        for i, p in enumerate(gs.pets):
+            opts += [Option(f"Feed {p.name}", f"{gs.pet_food} cans left",
+                            self.close_after(self.do(pets.feed, i)) if gs.pet_food else None),
+                     Option(f"Play with {p.name}", "+Pet happiness, +Mood", self.close_after(self.do(pets.play, i)))]
+            info.append(f"{p.name}: fed {int(p.fullness)}, happy {int(p.happiness)}")
+        if not opts:
+            return self.show_toast("No baby or pets with you.")
+        self.popup = Popup("Family", opts, text=" · ".join(info))
 
     def active_popup(self) -> Popup | None:
         if self.popup:
@@ -738,8 +887,14 @@ class App:
             drawables.append((301, lambda: self.name_tag(gs.date.name, 340 - ox, 300 - oy - 132)))
         if self.room == "ballpark":
             drawables.append((0, lambda: self.draw_scoreboard(ox, oy)))
+        if self.room == "petshop":                      # pets on display in their cages
+            for kind, (x, y) in zip(("testicles", "ovaries", "sperm"), ((135, 380), (400, 392), (665, 380))):
+                drawables.append((y, lambda k=kind, x=x, y=y: draw_pet(s, k, (x - ox, y - oy), 0.62, self.ticks)))
+        for i, p in enumerate(gs.pets):
+            w = self.pw[i]
+            drawables.append((w.y, lambda p=p, w=w: draw_pet(s, p.kind, (w.x - ox, w.y - oy), 0.62, self.ticks, w.moving)))
         for n in npcs.npcs_in(self.room, gs):
-            x, y = self.npc_pos(n)
+            x, y = SPOUSE_SPOT if self.room == "home" and n.key == gs.partner_key else self.npc_pos(n)
             frame = int(self.ticks / 120) % 4 if n.patrol else -1
             person(n.look, x, y, frame)
             drawables.append((y + 1, lambda x=x, y=y, n=n: self.name_tag(n.name, x - ox, y - oy - 132)))
@@ -809,7 +964,7 @@ class App:
                 scenery.grad(s, (x, 34, max(12, int(98 * val / 100)), 12), shade(col, 1.15), shade(col, 0.85), 6)
         info = F(16).render(f"${gs.money}  ·  Condoms {gs.condoms}  ·  Charm {gs.charm}", True, GOOD)
         s.blit(info, info.get_rect(topright=(W - 22, 16)))
-        hint = "P phone · B baby · 1-5 choose" if gs.baby else "P phone · 1-5 / E choose"
+        hint = "P phone · B family · 1-9 choose · F11 fullscreen" if (gs.baby or gs.pets) else "P phone · 1-9 / E choose · F11 fullscreen"
         h = F(12, False).render(hint, True, MUTED)
         s.blit(h, h.get_rect(topright=(W - 22, 40)))
         sym = gs.symptoms()
@@ -891,7 +1046,7 @@ class App:
                 self.do_swipe(e.key == pygame.K_RIGHT)
             return
         if e.key == pygame.K_b:
-            if self.popup and self.gs.baby and self.popup.title == self.gs.baby.name:
+            if self.popup and self.popup.title == "Family":
                 self.popup = None
             else:
                 self.baby_menu()
@@ -1108,8 +1263,8 @@ class App:
         self.card, self.drag_x = None, 0
 
     # ================================================================ batting mini-game
-    PLATE = (550, 640)
-    RELEASE = (550, 300)
+    PLATE = (550 + OX, 640)
+    RELEASE = (550 + OX, 300)
 
     def start_batting(self, mode):
         gs = self.gs
@@ -1188,6 +1343,7 @@ class App:
         bg = scenery._cache.get(key)
         if bg is None:
             bg = pygame.Surface((W, H))
+            C = 550 + OX
             night = self.ab.mode == "game"
             scenery.grad(bg, (0, 0, W, 170), (40, 30, 80) if night else (120, 180, 235),
                          (230, 120, 110) if night else (200, 225, 245))
@@ -1201,19 +1357,19 @@ class App:
             scenery.grad(bg, (0, 160, W, 40), (40, 100, 60), (30, 80, 50))
             for i, ad in enumerate(["GENITOPIA", "BEAN'S DINER", "WRAP IT UP!", "SCREW & NAIL", "CLUB VELVET"]):
                 t = scenery.font(14).render(ad, True, (240, 240, 220))
-                bg.blit(t, t.get_rect(center=(110 + i * 220, 180)))
+                bg.blit(t, t.get_rect(center=(W // 10 + i * W // 5, 180)))
             scenery.grad(bg, (0, 200, W, H - 200), (90, 160, 80), (60, 130, 60))
             for i in range(-10, 12):                     # mowing stripes in perspective
-                pts = [(550 + i * 30, 200), (550 + (i + 0.5) * 30, 200), (550 + (i + 0.5) * 160, H), (550 + i * 160, H)]
+                pts = [(C + i * 30, 200), (C + (i + 0.5) * 30, 200), (C + (i + 0.5) * 160, H), (C + i * 160, H)]
                 tmp = pygame.Surface((W, H), pygame.SRCALPHA)
                 pygame.draw.polygon(tmp, (255, 255, 255, 12), pts)
                 bg.blit(tmp, (0, 0))
-            pygame.draw.polygon(bg, (195, 145, 95), [(550, 250), (900, 470), (550, 720), (200, 470)])
-            pygame.draw.polygon(bg, (85, 155, 80), [(550, 330), (780, 470), (550, 600), (320, 470)])
-            pygame.draw.ellipse(bg, (185, 135, 88), (500, 280, 100, 40))
-            for x, y in ((900, 470), (550, 250), (200, 470)):
+            pygame.draw.polygon(bg, (195, 145, 95), [(C, 250), (C + 350, 470), (C, 720), (C - 350, 470)])
+            pygame.draw.polygon(bg, (85, 155, 80), [(C, 330), (C + 230, 470), (C, 600), (C - 230, 470)])
+            pygame.draw.ellipse(bg, (185, 135, 88), (C - 50, 280, 100, 40))
+            for x, y in ((C + 350, 470), (C, 250), (C - 350, 470)):
                 pygame.draw.rect(bg, (250, 250, 250), (x - 9, y - 6, 18, 12), border_radius=2)
-            pygame.draw.ellipse(bg, (185, 135, 88), (430, 600, 240, 80))
+            pygame.draw.ellipse(bg, (185, 135, 88), (C - 120, 600, 240, 80))
             px, py = self.PLATE
             pygame.draw.polygon(bg, (250, 250, 250), [(px - 22, py - 8), (px + 22, py - 8), (px + 22, py + 2), (px, py + 12), (px - 22, py + 2)])
             scenery._cache[key] = bg
@@ -1233,12 +1389,12 @@ class App:
         s, gs, ab, now = self.screen, self.gs, self.ab, pygame.time.get_ticks()
         s.blit(self.batting_bg(), (0, 0))
         if ab.mode == "practice":                       # pitching machine
-            scenery.grad(s, (515, 262, 70, 46), (120, 125, 135), (80, 85, 95), 10)
-            pygame.draw.circle(s, (40, 40, 46), (550, 284), 16)
-            pygame.draw.circle(s, (180, 185, 195), (550, 284), 6)
+            scenery.grad(s, (OX + 515, 262, 70, 46), (120, 125, 135), (80, 85, 95), 10)
+            pygame.draw.circle(s, (40, 40, 46), (OX + 550, 284), 16)
+            pygame.draw.circle(s, (180, 185, 195), (OX + 550, 284), 6)
         else:
             lean = 6 if self.bat_phase == "windup" and (now - self.bat_t0) > 500 else 0
-            draw_character(s, Character("penis", "Pitcher", "Tan", "Black", "cap"), (550 + lean, 318), 0.36,
+            draw_character(s, Character("penis", "Pitcher", "Tan", "Black", "cap"), (OX + 550 + lean, 318), 0.36,
                            ticks=self.ticks)
         if self.bat_phase == "pitch" or (self.bat_phase == "result" and not self.hit_anim and self.pitch_t < 1.25):
             t = min(self.pitch_t, 1.2)
@@ -1256,9 +1412,9 @@ class App:
             scenery.ball(s, (250, 250, 245), (x, y), r, light=1.0, dark=0.8, steps=5)
         zone = pygame.Rect(self.PLATE[0] - 60, self.PLATE[1] - 150, 120, 110)
         scenery.alpha_rect(s, (255, 255, 255, 18), zone, 6)
-        draw_character(s, gs.character, (400, 715), 0.95, gs.mood, gs.energy, gs.hygiene, ticks=self.ticks,
+        draw_character(s, gs.character, (OX + 400, 715), 0.95, gs.mood, gs.energy, gs.hygiene, ticks=self.ticks,
                        piercings=gs.piercings, belly=gs.belly_stage)
-        pivot = (452, 560)
+        pivot = (OX + 452, 560)
         swing_k = min(1.0, (now - self.swing_t0) / 160) if self.swing_t0 else 0
         self.draw_bat(pivot, -2.2 + swing_k * 2.9)
         box = pygame.Rect(16, 16, 330, 132)
@@ -1272,7 +1428,7 @@ class App:
         s.blit(F(14, False).render(f"Hits: {hits}", True, MUTED), (box.x + 14, box.y + 92))
         if self.bat_phase in ("pitch", "result"):
             t = F(18).render(ab.pitch + ("" if ab.is_strike else " (outside)"), True, (255, 255, 255))
-            s.blit(t, t.get_rect(center=(550, 240)))
+            s.blit(t, t.get_rect(center=(OX + 550, 240)))
         if self.bat_phase == "result" and ab.result:
             good = any(w in ab.result for w in ("HOME", "Double", "hit", "base"))
             t = F(44).render(ab.result, True, (255, 220, 90) if good else (255, 255, 255))
@@ -1353,6 +1509,8 @@ class App:
                 if abs(self.drag_x) > 100:
                     self.do_swipe(self.drag_x > 0)
                 self.drag_start, self.drag_x = None, 0
+            elif e.type == pygame.KEYDOWN and e.key == pygame.K_F11 and sys.platform != "emscripten":
+                pygame.display.toggle_fullscreen()
             elif e.type == pygame.KEYDOWN and hasattr(self, f"key_{self.scene}"):
                 getattr(self, f"key_{self.scene}")(e)
         if self.scene == "world":

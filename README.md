@@ -25,9 +25,10 @@ python main.py
 | 1-5 or click | Pick a choice from the pop-up |
 | E / Enter / Space | Pick the first available choice |
 | P / Tab | Open the phone (Spark dating app) |
-| B | Baby menu (feed, cuddle) |
+| B | Family menu: feed/cuddle the baby, feed/play with pets |
 | SPACE | Swing the bat (at the stadium) |
 | Esc | Close phone or pop-up |
+| F11 | Fullscreen (desktop version; the browser version fills the window automatically) |
 
 Walk up to a door, furniture, a resident or an event and choices pop up.
 
@@ -45,6 +46,12 @@ Walk up to a door, furniture, a resident or an event and choices pop up.
 | Ballers Stadium | Watch games, batting practice, play in games (Coach Rod). Job: concessions |
 | Screw & Nail | Home upgrades (Mandy) |
 | Apartments | Your date's bedroom, unlocked when someone is expecting you |
+| Rock Solid Jewelers | Engagement rings and necklaces (Goldie) |
+| Petal Pushers | Roses, chocolates, teddy bears to give as gifts (Fern) |
+| Nuts & Eggs | Pets: a pair of testicles, a set of ovaries or a pet sperm, plus pet food (Tad) |
+| Birthday Suits | Sunglasses, cowboy hat, flower crown, bow tie, gold chain: worn on your character, +charm (Vee) |
+| Genitopia Chapel | Weddings (Reverend Love) |
+| Pump House Gym | Workouts for fitness (Brick). Job: personal trainer |
 
 Around town you'll meet **Mayor Johnson**, **Granny Muffin** on her bench, **Officer Woody** on patrol and **Jaz** jogging around the fountain.
 
@@ -55,6 +62,14 @@ Around town you'll meet **Mayor Johnson**, **Granny Muffin** on her bench, **Off
 ## Romance with the residents
 
 Talking raises affection. Then you can **Flirt** (a charm check, once a day), **Ask on a date** (from 35 affection, $25) and, from 65 affection, ask them to **come over tonight**: they'll be waiting in your bedroom. Granny Muffin, Dr. Ova and Boss Richard will politely turn you down.
+
+## Going steady, engagement and marriage
+
+At 65+ affection ask a resident to be your **boyfriend/girlfriend**. Partners text you, miss you if you ignore them for 3 days, love gifts (double affection) and will dump you if they catch you cheating. Buy a ring at Rock Solid, wait at least 3 days together, reach 85+ affection and **propose**. Then get married at Genitopia Chapel: your spouse moves in (home in the evenings), chips in money every day and halves your rent.
+
+## Pets
+
+Adopt up to two pets at Nuts & Eggs and name them. They follow you around, need feeding and playtime (B), and keep your mood up when they're happy.
 
 ## Jobs and bills
 
@@ -71,6 +86,10 @@ Luxury bed, rain shower, chef's kitchen, giant TV, home gym, hot tub and a dream
 ## Menstrual cycle
 
 Playing the vagina character, you have a (compressed, 10-day) cycle tracked in the phone's Cycle app: a period that needs supplies and can bring cramps, a fertile window where unprotected sex is much riskier, and PMS. Pregnancy pauses it.
+
+## Ending a pregnancy
+
+If you're pregnant (and know it), Dr. Ova at Genitopia General can talk you through ending the pregnancy: medication up to day 7 or an in-clinic procedure up to day 10, with a day or two of rest afterwards. If you play the penis character, the decision is your partner's.
 
 ## Dating
 

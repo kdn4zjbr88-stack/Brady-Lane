@@ -100,7 +100,7 @@ def test_delivery_opens_baby_setup_and_baby_follows():
     gs.slot = 2
     assert app.active_popup().options[0].fn is None   # no babies in the club
     app.baby_menu()
-    assert app.popup.title == "Lulu"
+    assert app.popup.title == "Family" and "Lulu" in app.popup.text
     app.frame([])
 
 
@@ -216,3 +216,56 @@ def test_job_options_at_diner():
     stand_on(app, "eat")
     labels = [o.label for o in app.active_popup().options]
     assert any(l.startswith("Apply: Line cook") for l in labels)
+
+
+def test_new_shops_render_and_sell():
+    app = new_app()
+    gs = app.gs
+    gs.money = 5000
+    for room, spot in (("jeweler", "jeweler"), ("florist", "florist"), ("petshop", "petshop"),
+                       ("boutique", "boutique"), ("chapel", "chapel"), ("gym", "workout")):
+        app.warp(room)
+        app.frame([])
+        stand_on(app, spot)
+        assert app.active_popup().options
+    app.warp("petshop")
+    stand_on(app, "petshop")
+    app.choose(0)                                 # adopt testicles
+    assert app.scene == "pet_name"
+    app.name_entry["name"] = "Nutty"
+    app.frame([])
+    app.finish_pet_name()
+    assert gs.pets[0].name == "Nutty" and app.scene == "world"
+    app.warp("town", (1000, 700))
+    app.frame([])
+    app.baby_menu()
+    assert app.popup.title == "Family"
+
+
+def test_clinic_offers_pregnancy_options():
+    from brady.model import Conception
+    app = new_app()
+    gs = app.gs
+    gs.character.kind = "vagina"
+    gs.money = 1000
+    gs.conception = Conception(gs.day - 4, "Andre", revealed=True)
+    app.warp("clinic")
+    stand_on(app, "clinic")
+    labels = [o.label for o in app.active_popup().options]
+    app.choose(labels.index("Talk about ending the pregnancy"))
+    assert app.popup.title == "Your options" and "Dr. Ova" in app.popup.text
+    app.choose(0)
+    assert gs.conception is None
+
+
+def test_boyfriend_option_in_conversation():
+    app = new_app()
+    gs = app.gs
+    gs.affection["coach"] = 75
+    app.warp("ballpark")
+    stand_on(app, "talk:coach")
+    app.choose(0)
+    labels = [o.label for o in app.popup.options]
+    assert "Be my boyfriend?" in labels
+    app.choose(labels.index("Be my boyfriend?"))
+    assert gs.relationship == "dating" and gs.partner_key == "coach"

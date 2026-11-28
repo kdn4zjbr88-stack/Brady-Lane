@@ -215,8 +215,9 @@ def hook_up(gs: GameState, p: Partner, method: str) -> str | None:
         gs.conception = Conception(day=gs.day, partner=p.name)  # hidden!
 
     gs.date = None
-    from . import npcs
+    from . import npcs, relationships
     npcs.after_hookup(gs, p)
+    relationships.caught_cheating(gs, p.name)
     gs.advance()
     return None
 
@@ -423,4 +424,45 @@ def buy_painkillers(gs: GameState) -> str | None:
     gs.money -= PAINKILLER_PRICE
     gs.painkillers += 3
     gs.say("Bought painkillers (3). Cramps, beware.")
+    return None
+
+
+# ---- ending a pregnancy ------------------------------------------------------
+ABORTION_PILL_PRICE = 150
+ABORTION_PROCEDURE_PRICE = 300
+PILL_MAX_DAYS = 7
+PROCEDURE_MAX_DAYS = 10
+
+
+def abortion_options(gs: GameState) -> list[tuple[str, str, int, bool]]:
+    """(method, label, price, available) for a pregnant player at the clinic."""
+    d = gs.pregnancy_days
+    return [("pill", "Medication abortion (pills)", ABORTION_PILL_PRICE, d <= PILL_MAX_DAYS),
+            ("procedure", "In-clinic procedure", ABORTION_PROCEDURE_PRICE, d <= PROCEDURE_MAX_DAYS)]
+
+
+def abortion(gs: GameState, method: str) -> str | None:
+    c = gs.conception
+    if not (gs.is_carrier and c and c.revealed):
+        return "That's only an option when you know you're pregnant."
+    if gs.in_labor:
+        return "It's too late for that. The baby's coming!"
+    _, label, price, ok = next(o for o in abortion_options(gs) if o[0] == method)
+    if not ok:
+        return "Dr. Ova: \"It's too far along for that option, I'm sorry.\""
+    if gs.money < price:
+        return f"Dr. Ova: \"That costs ${price}. We can help you look into payment options.\""
+    gs.money -= price
+    gs.conception = None
+    gs.craving = None
+    gs.cycle_day = 1
+    if method == "pill":
+        gs.adjust(health=-8, energy=-25, mood=-8)
+        gs.say("Dr. Ova walks you through the pills and what to expect. You spend the day resting "
+               "with a heating pad. \"Call me if anything worries you.\"")
+    else:
+        gs.adjust(health=-12, energy=-30, mood=-8)
+        gs.say("The procedure is quick. Dr. Ova and the nurse are kind the whole time. "
+               "\"Take it easy for a day or two. However you feel is okay.\"")
+    gs.advance(2)
     return None

@@ -269,3 +269,23 @@ def test_boyfriend_option_in_conversation():
     assert "Be my boyfriend?" in labels
     app.choose(labels.index("Be my boyfriend?"))
     assert gs.relationship == "dating" and gs.partner_key == "coach"
+
+
+def test_afterglow_offers_to_make_it_official():
+    app = new_app(5)
+    gs = app.gs
+    gs.slot = 2
+    gs.rng.random = lambda: 0.0
+    stand_on(app, "door:club")
+    app.choose(0)
+    stand_on(app, "goer:0")
+    app.choose(0)              # chat up -> match
+    app.choose(0)              # go home with them
+    stand_on(app, "bed")
+    app.choose(0)              # with a condom
+    assert app.popup and app.popup.title == "Afterglow"
+    assert app.popup.options[0].label.startswith("Ask ")
+    app.choose(0)
+    assert gs.relationship == "dating" and gs.partner_obj is not None
+    app.phone_open, app.phone_tab = True, "matches"
+    app.frame([])

@@ -565,8 +565,16 @@ class App:
             g.date = None
             g.advance()
 
-        opts = [Option("Use a condom", f"{n} left", self.do(A.hook_up, p, "condom") if n else None),
+        then = lambda: self.afterglow(p)  # noqa: E731
+        opts = [Option("Use a condom", f"{n} left", self.do(A.hook_up, p, "condom", then=then) if n else None),
                 Option("No condom", "Risky...", self.ask_finish)]
+        who = self.who(p)
+        if any(v > 0 for v in gs.gifts.values()):
+            opts.append(Option("Give a gift first", ", ".join(k for k, v in gs.gifts.items() if v > 0),
+                               lambda: self.gift_menu(who)))
+        if relationships.is_partner(gs, who) and gs.relationship == "dating":
+            opts.append(Option("Propose", "On one knee" if gs.has_ring else "Buy a ring at Rock Solid first",
+                               self.do(relationships.propose, who) if gs.has_ring else None))
         if place == "home" and "hottub" in gs.upgrades:
             def tub(g):
                 g.adjust(mood=18, energy=8)
@@ -577,6 +585,31 @@ class App:
             opts.append(Option("Hot tub first", "Set the mood", self.do(tub)))
         opts.append(Option("Just cuddle", "Call it a night", self.do(cuddle)))
         return Popup(f"Get frisky with {p.name}?", opts)
+
+    def who(self, p):
+        """A date's Partner record, or the town resident behind it."""
+        return npcs.npc_for(p.name) or p
+
+    def afterglow(self, p):
+        """Right after hooking up: a chance to make it official."""
+        gs = self.gs
+        who = self.who(p)
+        if gs.game_over or gs.baby_needs_setup:
+            return
+        self.glow_with = p
+        if relationships.is_partner(gs, who):
+            self.popup = Popup("Afterglow", [Option("Snuggle", "Perfect night", self.close_after(lambda: None))],
+                               text=f"You and your {relationships.title(who, gs.relationship)} {who.name} lie "
+                                    "tangled in the sheets, grinning.")
+            return
+        opts = []
+        if relationships.can_ask(gs, who):
+            word = relationships.ask_word(who)
+            opts.append(Option(f"Ask {who.name.split()[0]} to be your {word}", "Make it official?",
+                               self.close_after(self.do(relationships.ask_after_hookup, who))))
+        opts.append(Option("Just enjoy the moment", "Keep it casual", self.close_after(lambda: None)))
+        note = "" if relationships.can_ask(gs, who) else " (You're already seeing someone. Careful...)"
+        self.popup = Popup("Afterglow", opts, text=f"{who.name} is lying next to you, smiling at the ceiling.{note}")
 
     def options_for(self, spot: Hotspot) -> Popup | None:
         gs, key, A = self.gs, spot.key, actions
@@ -685,7 +718,7 @@ class App:
                     opts.append(Option(label, f"${price} · +{charm} charm", self.do(shops.buy_or_wear, k)))
             return Popup("Birthday Suits boutique", opts + self.chat_option(spot))
         if key == "chapel":
-            partner = relationships.npc(gs)
+            partner = relationships.current(gs)
             if gs.relationship == "engaged" and partner:
                 opts = [Option(f"Marry {partner.name}!", f"${relationships.WEDDING_PRICE} · the big day",
                                self.do(relationships.wedding))]
@@ -782,15 +815,17 @@ class App:
         if gs.energy < 15:
             return self.show_toast("Too tired for that right now.")
         if not actions.can_conceive(gs, p):
-            return self.do(actions.hook_up, p, "inside")()
+            return self.do(actions.hook_up, p, "inside", then=lambda: self.afterglow(p))()
         if gs.character.kind == "penis":
             a, b = "Pull out", "Finish inside"
         else:
             a, b = "Ask them to pull out", "Let them finish inside"
         spot = self.current_spot()
         self.popup = Popup("When it's time...", [
-            Option(a, "Lower risk, not zero", self.close_after(self.do(actions.hook_up, p, "pull_out"))),
-            Option(b, "Highest pregnancy risk", self.close_after(self.do(actions.hook_up, p, "inside"))),
+            Option(a, "Lower risk, not zero",
+                   self.close_after(self.do(actions.hook_up, p, "pull_out", then=lambda: self.afterglow(p)))),
+            Option(b, "Highest pregnancy risk",
+                   self.close_after(self.do(actions.hook_up, p, "inside", then=lambda: self.afterglow(p)))),
         ], anchor=spot.zone if spot else None)
 
     def close_after(self, fn):
@@ -798,6 +833,7 @@ class App:
             self.popup = None
             fn()
         return run
+
 
     def baby_menu(self):
         """B: look after the baby and pets."""
@@ -885,6 +921,12 @@ class App:
             look = npc.look if npc else gs.date.look
             person(look, 340, 300)
             drawables.append((301, lambda: self.name_tag(gs.date.name, 340 - ox, 300 - oy - 132)))
+        if (self.room == "home" and gs.relationship == "married" and gs.partner_obj is not None
+                and gs.is_night_time and not (gs.date and gs.date.name == gs.partner_obj.name)):
+            sp = gs.partner_obj
+            person(sp.look, *SPOUSE_SPOT)
+            drawables.append((SPOUSE_SPOT[1] + 1, lambda: self.name_tag(sp.name, SPOUSE_SPOT[0] - ox,
+                                                                         SPOUSE_SPOT[1] - oy - 132)))
         if self.room == "ballpark":
             drawables.append((0, lambda: self.draw_scoreboard(ox, oy)))
         if self.room == "petshop":                      # pets on display in their cages
@@ -908,6 +950,13 @@ class App:
                 f = int(self.ticks / 140 + g.phase) % 4
                 person(g.partner.look, g.x, g.y, f)
                 drawables.append((g.y + 1, lambda g=g: self.name_tag(g.partner.name, g.x - ox, g.y - oy - 132)))
+        glow = self.popup and self.popup.title == "Afterglow" and getattr(self, "glow_with", None)
+        if glow and self.room in ("apartments", "home"):
+            gp = self.glow_with
+            npc = npcs.npc_for(gp.name)
+            gx, gy = (520, 250) if self.room == "apartments" else (340, 300)
+            person(npc.look if npc else gp.look, gx, gy)
+            drawables.append((gy + 1, lambda: self.name_tag(gp.name, gx - ox, gy - oy - 132)))
         if self.room == "apartments" and gs.date:
             person(gs.date.look, 520, 250)
             drawables.append((251, lambda: self.name_tag(gs.date.name, 520 - ox, 250 - oy - 132)))
@@ -1146,6 +1195,8 @@ class App:
                 s.set_clip(None)
                 s.blit(F(18).render(f"{p.name}, {p.age}", True, dark), (P.x + 78, y + 6))
                 extra = f" · together {p.times}x" if p.times else ""
+                if relationships.is_partner(gs, p):
+                    extra = f" · your {relationships.title(p, gs.relationship)}"
                 s.blit(F(13, False).render(p.vibe + extra, True, soft), (P.x + 78, y + 28))
             for k, b in btns.items():
                 if isinstance(k, tuple):

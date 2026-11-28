@@ -141,6 +141,8 @@ class Baby:
     happiness: float = 80
     in_crib: bool = False
     crying: bool = False
+    other_parent: str = ""
+    hungry_ticks: int = 0
 
 
 @dataclass
@@ -196,6 +198,8 @@ class GameState:
     talked_today: set = field(default_factory=set)
     # relationships: one exclusive partner who can become a fiance(e) and spouse
     partner_key: str | None = None
+    partner_obj: object = None                   # a Partner (Spark/club) when your sweetheart isn't a resident
+    family_warnings: int = 0
     relationship: str = ""                       # "" / dating / engaged / married
     together_since: int = 0
     last_partner_chat: int = 0
@@ -377,6 +381,23 @@ class GameState:
         b.happiness = clamp(b.happiness - (2 if not b.in_crib else crib_loss))
         was_crying = b.crying
         b.crying = b.fullness < 25 or b.happiness < 25
+        b.hungry_ticks = b.hungry_ticks + 1 if b.fullness <= 0 else 0
+        if b.hungry_ticks >= 4:                  # a whole day without food
+            b.hungry_ticks = 0
+            self.family_warnings += 1
+            other = b.other_parent or "the other parent"
+            if self.family_warnings == 1:
+                self.say(f"Genitopia Family Services knocks: \"{b.name} hasn't been fed all day. This is your one "
+                         f"warning. Raising a baby is your job too.\"")
+                self.adjust(mood=-15)
+            else:
+                self.say(f"Family Services takes {b.name} to live with {other}. You'll be paying child support "
+                         "every week. Ouch.")
+                from .bills import Bill
+                self.bills.append(Bill("support", "Child support", 60, self.day + 7))
+                self.baby = None
+                self.adjust(mood=-30)
+                return
         if b.crying:
             self.adjust(mood=-4)
             if not was_crying:
@@ -429,7 +450,8 @@ class GameState:
             if self.is_carrier:
                 self.say("Your period is late, you're queasy and your belly feels... rounder. You're pregnant!")
             else:
-                self.say(f"{partner} texts: \"hey... my period is late. I took a test. we're having a baby.\"")
+                self.say(f"{partner} texts: \"hey... my period is late. I took a test. we're having a baby. "
+                         f"and you're going to be there for this kid, right?\"")
             self.adjust(mood=-10)
         if days >= PREGNANCY_SHOWS_AFTER and self.craving is None and self.rng.random() < 0.6:
             self.craving = self.rng.choice(CRAVINGS)

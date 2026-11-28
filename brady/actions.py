@@ -175,6 +175,8 @@ def text_match(gs: GameState, p: Partner) -> str | None:
         return None
     gs.date = p
     gs.date_place = "apartments"
+    from .relationships import chat_with_partner
+    chat_with_partner(gs, p)
     gs.say(f"{p.name}: \"come over. Apartments, unit 4. door's open.\"")
     return None
 
@@ -217,6 +219,9 @@ def hook_up(gs: GameState, p: Partner, method: str) -> str | None:
     gs.date = None
     from . import npcs, relationships
     npcs.after_hookup(gs, p)
+    if not npcs.npc_for(p.name):
+        relationships.change(gs, p, 10)
+    relationships.chat_with_partner(gs, p)
     relationships.caught_cheating(gs, p.name)
     gs.advance()
     return None
@@ -336,13 +341,16 @@ def deliver(gs: GameState) -> None:
     gs.in_labor = False
     gs.labor_days = 0
     gs.craving = None
-    gs.baby = Baby(skin=gs.character.body_color, hair=gs.character.hair_color)
+    gs.baby = Baby(skin=gs.character.body_color, hair=gs.character.hair_color, other_parent=partner)
     gs.baby_needs_setup = True
     gs.formula += 2
     gs.adjust(mood=30)
     if gs.is_carrier:
         gs.adjust(health=-10, energy=-30)
-    gs.say(f"It's a baby! You and {partner} are parents now. The clinic sends you home with 2 bottles of formula.")
+        gs.say(f"It's a baby! You and {partner} are parents now. The clinic sends you home with 2 bottles of formula.")
+    else:
+        gs.say(f"It's a baby! {partner} hands them to you: \"Here, Dad. You're raising this one too. Feed them, "
+               f"cuddle them, show up.\" The clinic sends you home with the baby and 2 bottles of formula.")
 
 
 def deliver_at_clinic(gs: GameState) -> str | None:

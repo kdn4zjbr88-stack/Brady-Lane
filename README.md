@@ -65,7 +65,7 @@ Talking raises affection. Then you can **Flirt** (a charm check, once a day), **
 
 ## Going steady, engagement and marriage
 
-At 65+ affection ask a resident to be your **boyfriend/girlfriend**. Partners text you, miss you if you ignore them for 3 days, love gifts (double affection) and will dump you if they catch you cheating. Buy a ring at Rock Solid, wait at least 3 days together, reach 85+ affection and **propose**. Then get married at Genitopia Chapel: your spouse moves in (home in the evenings), chips in money every day and halves your rent.
+Right after hooking up with anyone (a resident, a Spark match or someone from the club) you can ask them to be your **boyfriend/girlfriend**; chemistry and charm decide the answer. You can also ask a resident while chatting once they're at 65+ affection. Partners text you, miss you if you ignore them for 3 days, love gifts (double affection) and will dump you if they catch you cheating. Buy a ring at Rock Solid, wait at least 3 days together, reach 85+ affection and **propose**. Then get married at Genitopia Chapel: your spouse moves in (home in the evenings), chips in money every day, helps with the baby and halves your rent. Partners you met on Spark or at the club can be proposed to in the bedroom.
 
 ## Pets
 
@@ -102,6 +102,8 @@ Each encounter is a choice: condom, or no condom and then pull out or finish ins
 A pregnancy shows after a few days: morning sickness, back aches, tiredness and cravings, and a vagina character's belly grows over time. If you play the penis, your partner texts you the updates and cravings instead. Around day 12 labor starts: get to Genitopia General within a day, or the baby arrives without you.
 
 The baby is yours to customise (name, skin, hair, onesie, bow/beanie/pacifier). They follow you around town, need feeding (formula from the Pharmacy) and cuddles, and can be left in the crib at home when you go out.
+
+If you play the penis and get someone pregnant, the baby comes home with you: you raise them too. Neglect the baby (a whole day without food) and Family Services gives you one warning; the second time the baby goes to live with the other parent and you pay weekly child support.
 
 ## Tests
 

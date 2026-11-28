@@ -465,3 +465,63 @@ def test_gym_and_trainer_job():
     assert jobs.apply(gs, "trainer") is None
     gs.energy, gs.slot = 100, 0
     assert shops.gym_workout(gs) is None and gs.money == 140
+
+
+# ---- asking out after hooking up, and dads raising babies ---------------------------
+def test_ask_spark_match_out_after_hookup_then_marry():
+    from brady import relationships as rel
+    gs = new_game()
+    gs.money = 5000
+    p = partner("vagina")
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, p, "condom")
+    assert rel.can_ask(gs, p)
+    rel.ask_after_hookup(gs, p)
+    assert gs.relationship == "dating" and gs.partner_obj is p and gs.partner_key is None
+    assert rel.title(p, gs.relationship) == "girlfriend" and rel.current(gs) is p
+    assert not rel.can_ask(gs, partner("penis"))
+    rel.buy_ring(gs)
+    gs.day += 3
+    gs.affection[f"p:{p.name}"] = 90
+    assert rel.propose(gs, p) is None and gs.relationship == "engaged"
+    assert rel.wedding(gs) is None and gs.relationship == "married"
+
+
+def test_turned_down_after_hookup():
+    from brady import relationships as rel
+    gs = new_game()
+    p = partner("penis")
+    gs.rng.random = lambda: 0.99
+    rel.ask_after_hookup(gs, p)
+    assert gs.relationship == ""
+
+
+def test_ask_resident_out_after_hookup():
+    from brady import npcs, relationships as rel
+    gs = new_game()
+    gs.rng.random = lambda: 0.0
+    rocco = npcs.NPC_BY_KEY["rocco"]
+    rel.ask_after_hookup(gs, rocco)
+    assert gs.partner_key == "rocco" and npcs.stage(gs, rocco) == "Boyfriend"
+
+
+def test_dad_raises_the_baby():
+    gs = new_game()                                  # penis character
+    gs.rng.random = lambda: 0.0
+    actions.hook_up(gs, partner("vagina"), "inside")
+    gs.rng.random = lambda: 0.5                      # she keeps the pregnancy
+    live_days(gs, lambda: gs.baby is not None)
+    assert gs.baby and gs.baby.other_parent == "Sam" and gs.baby_with_you
+    assert any("Dad" in m for m in gs.log)
+
+
+def test_neglected_baby_goes_to_other_parent_with_child_support():
+    gs = new_game()
+    actions.deliver(gs)
+    gs.baby.other_parent = "Sam"
+    gs.money = 10_000
+    for _ in range(2):
+        gs.baby.fullness = 0
+        gs.baby.hungry_ticks = 3
+        gs.advance()
+    assert gs.baby is None and any(b.key == "support" for b in gs.bills)
